@@ -33,6 +33,8 @@ export default function Page() {
   const pendingMatchRef = useRef(true);
   const [socket, setSocket] = useState(null);
   const fallbackTimerRef = useRef(null);
+  const passageRef = useRef("");
+  const awaitingNextRef = useRef(false);
 
   const startFallbackRace = useCallback(() => {
     const fallback = pickFallbackPassage();
@@ -49,15 +51,24 @@ export default function Page() {
     setBestMinuteCpm(0);
     completionRef.current = false;
   }, []);
+  useEffect(() => {
+    passageRef.current = passage;
+  }, [passage]);
+  useEffect(() => {
+    awaitingNextRef.current = awaitingNext;
+  }, [awaitingNext]);
 
   useEffect(() => {
     const url = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:8081";
     const s = io(url, { transports: ["websocket"], reconnection: true });
     setSocket(s);
 
-    const useFallback = () => {
-      startFallbackRace();
+    const handleConnectionIssue = () => {
       pendingMatchRef.current = true;
+      if (passageRef.current && !awaitingNextRef.current) {
+        return;
+      }
+      startFallbackRace();
     };
 
     s.on("room:state", (msg) => {
@@ -88,9 +99,9 @@ export default function Page() {
     s.on("race:progress", (msg) => {
       setPlayers(prev => prev.map(p => p.id === msg.userId ? { ...p, progress: msg.progressChars, wpm: msg.wpm, acc: msg.acc } : p));
     });
-    s.on("connect_error", useFallback);
+    s.on("connect_error", handleConnectionIssue);
     s.on("disconnect", () => {
-      if (!navigator.onLine) useFallback();
+      if (!navigator.onLine) handleConnectionIssue();
     });
     return () => { s.close(); };
   }, [startFallbackRace]);
@@ -225,7 +236,7 @@ export default function Page() {
 
   return (
     <main style={{ maxWidth: 720, margin: "40px auto", padding: 16 }}>
-      <h1 style={{ fontSize: 28, fontWeight: 600, marginBottom: 12 }}>Typing Race</h1>
+      <h1 style={{ fontSize: 28, fontWeight: 600, marginBottom: 12 }}>Torfinns Touch-Trainer</h1>
       <div style={{ border: "1px solid #ddd", borderRadius: 12, padding: 16 }}>
         <p style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 18, lineHeight: 1.6, minHeight: 48 }}>
           {loadingPassage ? (
