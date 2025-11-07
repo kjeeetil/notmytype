@@ -592,7 +592,7 @@ function Starfield({ speed }) {
     let width = canvas.width = window.innerWidth;
     let height = canvas.height = window.innerHeight;
     const depth = 1200;
-    const starCount = 500;
+    const starCount = 700;
     const stars = [];
 
     const resetStar = (star, initial = false) => {
@@ -624,15 +624,15 @@ function Starfield({ speed }) {
     let animationFrame;
     const render = () => {
       const cpm = speedRef.current || 0;
-      const normalized = Math.min(cpm / 400, 2);
+      const normalized = Math.min(cpm / 200, 2);
       const hyperspace = normalized >= 1;
-      const starSpeed = 4 + normalized * 12;
-      ctx.fillStyle = hyperspace ? "rgba(0,0,0,0.65)" : "rgba(0,0,0,0.85)";
+      const rainbow = cpm >= 300;
+      const starSpeed = 5 + normalized * 15;
+      ctx.fillStyle = hyperspace ? "rgba(0,0,0,0.55)" : "rgba(0,0,0,0.8)";
       ctx.fillRect(0, 0, width, height);
 
-      ctx.strokeStyle = "#ffffff";
-      ctx.lineWidth = hyperspace ? 2 : 1;
-      ctx.globalAlpha = hyperspace ? 0.9 : 0.7;
+      ctx.lineWidth = hyperspace ? 2.6 : 1.2;
+      ctx.globalAlpha = hyperspace ? 0.95 : 0.75;
 
       for (const star of stars) {
         const prevZ = star.z;
@@ -651,6 +651,9 @@ function Starfield({ speed }) {
           resetStar(star);
           continue;
         }
+
+        const hue = rainbow ? (Math.abs(star.x) + Math.abs(star.y)) % 360 : 0;
+        ctx.strokeStyle = rainbow ? `hsl(${hue}, 90%, ${hyperspace ? 70 : 85}%)` : "#ffffff";
 
         ctx.beginPath();
         ctx.moveTo(prev.x, prev.y);
