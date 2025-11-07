@@ -190,6 +190,9 @@ export default function Page() {
     } catch (err) {
       console.warn("Failed to start audio engine", err);
       audioEngineRef.current?.stop();
+      if (audioEngineRef.current?.unsupported === true) {
+        audioEngineRef.current = createSilentBeatEngine(err?.message || "Audio engine unavailable");
+      }
       if (mountedRef.current) {
         setAudioEnabled(false);
       }
@@ -663,6 +666,16 @@ function NamePrompt({ inputRef, pendingScore, playerName, setPlayerName, onSubmi
 }
 
 function createBeatEngine() {
+  if (typeof window === "undefined") {
+    return createSilentBeatEngine("Audio unavailable during server render");
+  }
+
+  const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextCtor) {
+    console.warn("Web Audio API is not supported in this environment");
+    return createSilentBeatEngine("Web Audio API not supported");
+  }
+
   class BeatEngineImpl {
     constructor() {
       this.ctx = null;
@@ -673,24 +686,44 @@ function createBeatEngine() {
       this.speed = 0;
       this.startPromise = null;
       this.shouldPlay = false;
+      this.unsupported = false;
+      this.supported = true;
     }
 
     ensureContext() {
+      if (this.unsupported) {
+        throw new Error("Audio context unavailable");
+      }
       if (this.ctx) return;
-      const AudioContext = window.AudioContext || window.webkitAudioContext;
-      this.ctx = new AudioContext();
-      this.masterGain = this.ctx.createGain();
-      this.masterGain.gain.value = 0.4;
-      this.masterGain.connect(this.ctx.destination);
+      try {
+        this.ctx = new AudioContextCtor();
+        this.masterGain = this.ctx.createGain();
+        this.masterGain.gain.value = 0.4;
+        this.masterGain.connect(this.ctx.destination);
+      } catch (err) {
+        this.ctx = null;
+        this.masterGain = null;
+        this.unsupported = true;
+        this.supported = false;
+        throw err;
+      }
     }
 
     async start() {
-      this.ensureContext();
+      try {
+        this.ensureContext();
+      } catch (err) {
+        return Promise.reject(err);
+      }
       if (!this.ctx) return;
       if (this.ctx.state === "closed") {
         this.ctx = null;
         this.masterGain = null;
-        this.ensureContext();
+        try {
+          this.ensureContext();
+        } catch (err) {
+          return Promise.reject(err);
+        }
       }
       if (!this.ctx) return;
       this.shouldPlay = true;
@@ -833,6 +866,18 @@ function createBeatEngine() {
   }
 
   return new BeatEngineImpl();
+}
+
+function createSilentBeatEngine(message) {
+  return {
+    supported: false,
+    unsupported: true,
+    start() {
+      return Promise.reject(new Error(message || "Audio engine unavailable"));
+    },
+    stop() {},
+    setSpeed() {}
+  };
 }
 
 function Starfield({ speed }) {
