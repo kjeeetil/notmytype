@@ -1,0 +1,14 @@
+version: "3.8"
+services:
+  server:
+    build: ./server
+    ports:
+      - "8081:8080"
+  web:
+    build: ./web
+    environment:
+      - NEXT_PUBLIC_SOCKET_URL=http://localhost:8081
+    ports:
+      - "3000:8080"
+    depends_on:
+      - server

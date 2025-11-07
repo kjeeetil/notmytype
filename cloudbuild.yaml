@@ -1,0 +1,46 @@
+# Cloud Build pipeline: builds & deploys server + web to Cloud Run
+# Set substitutions in the trigger:
+#   _REGION             (e.g., europe-north1)
+#   _AR_REPO            (Artifact Registry repo name, e.g., typing-race)
+#   _SERVICE_SERVER     (Cloud Run service name for server, e.g., typing-race-server)
+#   _SERVICE_WEB        (Cloud Run service name for web, e.g., typing-race-web)
+#   _PROJECT_ID         (your GCP project id)
+# Optional:
+#   _MIN_INSTANCES      (e.g., 1)
+#   _MAX_INSTANCES      (e.g., 10)
+#   _SERVER_CONCURRENCY (e.g., 80)
+
+steps:
+  # Build & push server image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build','-t','${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/${_SERVICE_SERVER}:${SHORT_SHA}','server']
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push','${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/${_SERVICE_SERVER}:${SHORT_SHA}']
+
+  # Build & push web image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build','-t','${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/${_SERVICE_WEB}:${SHORT_SHA}','web']
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push','${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/${_SERVICE_WEB}:${SHORT_SHA}']
+
+  # Deploy server first
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: bash
+    args:
+      - '-c'
+      - |
+        gcloud run deploy ${_SERVICE_SERVER}           --image=${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/${_SERVICE_SERVER}:${SHORT_SHA}           --region=${_REGION}           --platform=managed           --allow-unauthenticated           --min-instances=${_MIN_INSTANCES:-0}           --max-instances=${_MAX_INSTANCES:-10}           --concurrency=${_SERVER_CONCURRENCY:-80}
+
+  # Read back server URL and deploy web with NEXT_PUBLIC_SOCKET_URL pointing to it
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: bash
+    args:
+      - '-c'
+      - |
+        SERVER_URL=$(gcloud run services describe ${_SERVICE_SERVER} --region=${_REGION} --format='value(status.url)')
+        echo "Server URL: $SERVER_URL"
+        gcloud run deploy ${_SERVICE_WEB}           --image=${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/${_SERVICE_WEB}:${SHORT_SHA}           --region=${_REGION}           --platform=managed           --allow-unauthenticated           --min-instances=${_MIN_INSTANCES:-0}           --max-instances=${_MAX_INSTANCES:-10}           --set-env-vars=NEXT_PUBLIC_SOCKET_URL=$SERVER_URL
+
+images:
+  - '${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/${_SERVICE_SERVER}:${SHORT_SHA}'
+  - '${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/${_SERVICE_WEB}:${SHORT_SHA}'

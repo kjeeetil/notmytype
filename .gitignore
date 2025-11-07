@@ -1,0 +1,12 @@
+# Node
+node_modules
+npm-debug.log
+.next
+dist
+
+# OS
+.DS_Store
+
+# Editor
+.vscode
+.idea
