@@ -76,6 +76,9 @@ export default function Page() {
       startFallbackRace();
     };
 
+    s.on("scores:update", (list = []) => {
+      setScores(Array.isArray(list) ? list : []);
+    });
     s.on("room:state", (msg) => {
       setPlayers(msg.players || []);
       setCountdownMs(msg.countdownMs ?? null);
@@ -128,18 +131,6 @@ export default function Page() {
     return () => clearInterval(id);
   }, []);
   useEffect(() => {
-    const stored = localStorage.getItem("scores");
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed)) setScores(parsed);
-      } catch { /* ignore */ }
-    }
-  }, []);
-  useEffect(() => {
-    localStorage.setItem("scores", JSON.stringify(scores.slice(0, 10)));
-  }, [scores]);
-  useEffect(() => {
     if (showNamePrompt) {
       setTimeout(() => {
         scoreInputRef.current?.focus();
@@ -163,6 +154,17 @@ export default function Page() {
       }
     };
   }, [loadingPassage, passage.length, startFallbackRace]);
+  useEffect(() => {
+    const base = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:8081";
+    const url = `${base.replace(/\/$/, "")}/scores`;
+    fetch(url).then(async (res) => {
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data && Array.isArray(data.scores)) {
+        setScores(data.scores);
+      }
+    }).catch(() => {});
+  }, []);
 
   const metrics = useMemo(() => computeMetrics(events, now), [events, now]);
   const [lastMetrics, setLastMetrics] = useState(() => metrics);
@@ -290,7 +292,9 @@ export default function Page() {
       score: pendingScore,
       timestamp: Date.now()
     };
-    setScores((prev) => [entry, ...prev].slice(0, 10));
+    if (socket?.connected) {
+      socket.emit("score:submit", entry);
+    }
     setPendingScore(null);
     setShowNamePrompt(false);
     setPlayerName(name);

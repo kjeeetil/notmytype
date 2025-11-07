@@ -22,12 +22,23 @@ const passages = [
   "We operate with a flexible, agile structure built on alliances with suppliers to keep incentives aligned and collaborative."
 ];
 
+// Global recent score store (replace with persistent DB later)
+const recentScores = [];
+const MAX_SCORES = 10;
+
 // Very permissive CORS for demo; tighten in prod
 const server = http.createServer((req, res) => {
-  // health check endpoint
   if (req.url === "/") {
     res.writeHead(200, { "content-type": "text/plain" });
     res.end("typing-race server ok\n");
+    return;
+  }
+  if (req.url === "/scores") {
+    res.writeHead(200, {
+      "content-type": "application/json",
+      "access-control-allow-origin": "*"
+    });
+    res.end(JSON.stringify({ scores: recentScores }));
     return;
   }
   res.writeHead(404);
@@ -75,10 +86,18 @@ function emitRoomState(room) {
   });
 }
 
+function recordScore(entry) {
+  recentScores.unshift(entry);
+  if (recentScores.length > MAX_SCORES) recentScores.length = MAX_SCORES;
+}
+
 io.on("connection", (socket) => {
   let currentRoom = null;
   let totals = { correct: 0, total: 0 };
   let lastPassage = null;
+  const socketHandle = `Guest-${socket.id.slice(0,4)}`;
+
+  socket.emit("scores:update", recentScores);
 
   socket.on("quick:match", () => {
     if (currentRoom) {
@@ -95,7 +114,7 @@ io.on("connection", (socket) => {
     currentRoom = room;
     lastPassage = room.passage;
 
-    const p = { id: socket.id, handle: `Guest-${socket.id.slice(0,4)}`, progress: 0, wpm: 0, acc: 100 };
+    const p = { id: socket.id, handle: socketHandle, progress: 0, wpm: 0, acc: 100 };
     room.players.set(socket.id, p);
     socket.join(room.id);
 
@@ -137,6 +156,15 @@ io.on("connection", (socket) => {
         .map(p=>({ userId:p.id, wpm:p.wpm, acc:p.acc, finishedMs: Date.now() - room.startedAt }));
       io.to(room.id).emit("race:finish", { leaderboard });
     }
+  });
+
+  socket.on("score:submit", (payload = {}) => {
+    const { name, score } = payload;
+    const numericScore = Number(score);
+    if (!Number.isFinite(numericScore) || numericScore <= 0) return;
+    const displayName = typeof name === "string" && name.trim() ? name.trim().slice(0, 32) : socketHandle;
+    recordScore({ name: displayName, score: Math.round(numericScore), timestamp: Date.now() });
+    io.emit("scores:update", recentScores);
   });
 
   socket.on("disconnect", () => {
