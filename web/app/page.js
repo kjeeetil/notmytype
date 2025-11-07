@@ -6,6 +6,13 @@ const WINDOW_FLOAT_MS = 10_000;
 const WINDOW_MINUTE_MS = 60_000;
 const MAX_HISTORY_MS = 5 * 60_000;
 const CHART_STEP_MS = 5_000;
+const FALLBACK_PASSAGES = [
+  "Pecan Energies advocates for Africa to harness its resources sustainably within a just energy transition for the continent.",
+  "Building on a USD 200 million investment, Africa Finance Corporation acquired Pecan Energies to develop Ghana's offshore resources responsibly.",
+  "Our ambition is to diversify over time and consolidate as a Pan-African energy leader focused on sustainable development and empowered communities.",
+  "The company blends Pan-African and Scandinavian values where sustainability, localisation, empowerment and giving back are a way of doing business.",
+  "Our operating model is integrated, flexible and efficient with a commitment to empower communities beyond local content obligations."
+];
 
 export default function Page() {
   const [players, setPlayers] = useState([]);
@@ -29,7 +36,20 @@ export default function Page() {
     const url = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:8081";
     const s = io(url, { transports: ["websocket"] });
     setSocket(s);
-    s.emit("quick:match");
+
+    const requestMatch = () => s.emit("quick:match");
+    if (s.connected) {
+      requestMatch();
+    } else {
+      s.once("connect", requestMatch);
+    }
+
+    const useFallback = () => {
+      setPassage((prev) => prev || pickFallbackPassage());
+      setLoadingPassage(false);
+      setAwaitingNext(false);
+    };
+
     s.on("room:state", (msg) => {
       setPlayers(msg.players || []);
       setCountdownMs(msg.countdownMs ?? null);
@@ -58,6 +78,10 @@ export default function Page() {
     s.on("race:progress", (msg) => {
       setPlayers(prev => prev.map(p => p.id === msg.userId ? { ...p, progress: msg.progressChars, wpm: msg.wpm, acc: msg.acc } : p));
     });
+    s.on("connect_error", useFallback);
+    s.on("disconnect", () => {
+      if (!navigator.onLine) useFallback();
+    });
     return () => { s.close(); };
   }, []);
 
@@ -65,6 +89,16 @@ export default function Page() {
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, []);
+
+  useEffect(() => {
+    if (!loadingPassage || passage.length) return;
+    const timer = setTimeout(() => {
+      setPassage((prev) => prev || pickFallbackPassage());
+      setLoadingPassage(false);
+      setAwaitingNext(false);
+    }, 4000);
+    return () => clearTimeout(timer);
+  }, [loadingPassage, passage.length]);
 
   const metrics = useMemo(() => computeMetrics(events, now), [events, now]);
   const decoratedPassage = useMemo(() => {
@@ -134,13 +168,21 @@ export default function Page() {
     setStartedAt(null);
     setCountdownMs(null);
     setPlayers([]);
-    setAwaitingNext(true);
-    setPassage("");
-    setLoadingPassage(true);
     setEvents([]);
     setPeakCpm(0);
     setBestMinuteCpm(0);
-    socket?.emit("quick:match");
+
+    if (socket?.connected) {
+      setAwaitingNext(true);
+      setPassage("");
+      setLoadingPassage(true);
+      socket.emit("quick:match");
+    } else {
+      const nextPassage = pickFallbackPassage();
+      setAwaitingNext(false);
+      setPassage(nextPassage);
+      setLoadingPassage(false);
+    }
   }
 
   return (
@@ -286,6 +328,11 @@ function StatsPanel({ floating, peak, bestMinute, series }) {
       <Chart series={series} />
     </section>
   );
+}
+
+function pickFallbackPassage() {
+  const idx = Math.floor(Math.random() * FALLBACK_PASSAGES.length);
+  return FALLBACK_PASSAGES[idx] || "Pecan Energies unlocks sustainable prosperity for Ghana and beyond.";
 }
 
 function Stat({ label, value }) {
