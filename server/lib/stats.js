@@ -1,10 +1,11 @@
 // Shared helpers for computing player stats; extracted for testability.
 export function b64url(input) {
-  return Buffer.from(input).toString("base64url").slice(0, 16);
+  const encoded = Buffer.from(input).toString("base64url");
+  return encoded.padEnd(16, "0").slice(0, 16);
 }
 
 export function computeWPM(correctChars, startedAt, now = Date.now()) {
-  if (!startedAt || correctChars <= 0) return 0;
+  if (startedAt == null || correctChars <= 0) return 0;
   const minutes = (now - startedAt) / 60000;
   if (minutes <= 0) return 0;
   const words = correctChars / 5;
