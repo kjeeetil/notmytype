@@ -52,7 +52,9 @@ export default function Page() {
   const [playerName, setPlayerName] = useState("");
   const scoreInputRef = useRef(null);
   const [audioEnabled, setAudioEnabled] = useState(false);
+  const [audioInitPending, setAudioInitPending] = useState(false);
   const audioEngineRef = useRef(null);
+  const mountedRef = useRef(true);
   const [sessionStats, setSessionStats] = useState({ chars: 0, startMs: null });
 
   const startFallbackRace = useCallback(() => {
@@ -74,10 +76,6 @@ export default function Page() {
   useEffect(() => {
     awaitingNextRef.current = awaitingNext;
   }, [awaitingNext]);
-  useEffect(() => {
-    setAudioEnabled(false);
-  }, []);
-
   useEffect(() => {
     const url = getSocketBaseUrl();
     const s = io(url, { transports: ["websocket"], reconnection: true });
@@ -153,17 +151,15 @@ export default function Page() {
     }
   }, [showNamePrompt]);
   useEffect(() => {
-    if (!audioEnabled) {
-      audioEngineRef.current?.stop();
-      return;
-    }
-    if (!audioEngineRef.current) {
-      audioEngineRef.current = createBeatEngine();
-    }
-    audioEngineRef.current.start();
     return () => {
+      mountedRef.current = false;
       audioEngineRef.current?.stop();
     };
+  }, []);
+  useEffect(() => {
+    if (!audioEnabled) {
+      audioEngineRef.current?.stop();
+    }
   }, [audioEnabled]);
   useEffect(() => {
     const engine = audioEngineRef.current;
@@ -171,6 +167,38 @@ export default function Page() {
       engine.setSpeed(Math.min(1.5, (effectiveMetrics.minuteCpm || 0) / 300));
     }
   }, [effectiveMetrics.minuteCpm]);
+
+  const handleToggleAudio = useCallback(async () => {
+    if (audioEnabled) {
+      setAudioEnabled(false);
+      setAudioInitPending(false);
+      audioEngineRef.current?.stop();
+      return;
+    }
+    if (audioInitPending) {
+      return;
+    }
+    if (!audioEngineRef.current) {
+      audioEngineRef.current = createBeatEngine();
+    }
+    setAudioInitPending(true);
+    try {
+      await audioEngineRef.current.start();
+      if (mountedRef.current) {
+        setAudioEnabled(true);
+      }
+    } catch (err) {
+      console.warn("Failed to start audio engine", err);
+      audioEngineRef.current?.stop();
+      if (mountedRef.current) {
+        setAudioEnabled(false);
+      }
+    } finally {
+      if (mountedRef.current) {
+        setAudioInitPending(false);
+      }
+    }
+  }, [audioEnabled, audioInitPending]);
 
   useEffect(() => {
     if (fallbackTimerRef.current) {
@@ -349,7 +377,8 @@ export default function Page() {
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, marginBottom: 12 }}>
         <h1 style={{ fontSize: 28, fontWeight: 600, margin: 0 }}>Torfinns Touch-Trainer</h1>
         <button
-          onClick={() => setAudioEnabled((prev) => !prev)}
+          onClick={handleToggleAudio}
+          disabled={audioInitPending && !audioEnabled}
           style={{
             marginLeft: "auto",
             padding: "8px 16px",
@@ -358,10 +387,11 @@ export default function Page() {
             background: audioEnabled ? "rgba(34,197,94,0.2)" : "transparent",
             color: "#f8fafc",
             fontWeight: 600,
-            cursor: "pointer"
+            cursor: audioInitPending && !audioEnabled ? "wait" : "pointer",
+            opacity: audioInitPending && !audioEnabled ? 0.65 : 1
           }}
         >
-          {audioEnabled ? "Mute Synth" : "Play Synth"}
+          {audioEnabled ? "Mute Synth" : audioInitPending ? "Starting…" : "Play Synth"}
         </button>
       </div>
       <div style={{ border: "1px solid rgba(255,255,255,0.2)", borderRadius: 12, padding: 16, background: "rgba(0,0,0,0.5)" }}>
@@ -641,6 +671,8 @@ function createBeatEngine() {
       this.timer = null;
       this.step = 0;
       this.speed = 0;
+      this.startPromise = null;
+      this.shouldPlay = false;
     }
 
     ensureContext() {
@@ -652,14 +684,49 @@ function createBeatEngine() {
       this.masterGain.connect(this.ctx.destination);
     }
 
-    start() {
+    async start() {
       this.ensureContext();
-      this.ctx.resume();
-      this.isPlaying = true;
-      this.scheduleLoop();
+      if (!this.ctx) return;
+      if (this.ctx.state === "closed") {
+        this.ctx = null;
+        this.masterGain = null;
+        this.ensureContext();
+      }
+      if (!this.ctx) return;
+      this.shouldPlay = true;
+      if (this.isPlaying) {
+        if (this.ctx.state === "suspended") {
+          await this.ctx.resume();
+        }
+        return;
+      }
+      if (this.startPromise) {
+        await this.startPromise;
+        return;
+      }
+      if (this.timer) {
+        clearTimeout(this.timer);
+        this.timer = null;
+      }
+      const resumePromise = this.ctx.state !== "running" ? this.ctx.resume() : Promise.resolve();
+      this.startPromise = resumePromise.then(() => {
+        if (!this.shouldPlay) {
+          return;
+        }
+        if (this.isPlaying) {
+          return;
+        }
+        this.isPlaying = true;
+        this.step = 0;
+        this.scheduleLoop();
+      }).finally(() => {
+        this.startPromise = null;
+      });
+      return this.startPromise;
     }
 
     stop() {
+      this.shouldPlay = false;
       this.isPlaying = false;
       if (this.timer) {
         clearTimeout(this.timer);
