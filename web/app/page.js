@@ -177,7 +177,8 @@ export default function Page() {
             border: "1px solid #ccc",
             outline: "none",
             fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-            background: awaitingNext ? "#f3f4f6" : "#fff"
+            background: awaitingNext ? "#f3f4f6" : "#fff",
+            boxSizing: "border-box"
           }}
         />
       </div>
