@@ -13,6 +13,16 @@ const FALLBACK_PASSAGES = [
   "The company blends Pan-African and Scandinavian values where sustainability, localisation, empowerment and giving back are a way of doing business.",
   "Our operating model is integrated, flexible and efficient with a commitment to empower communities beyond local content obligations."
 ];
+const DEFAULT_SOCKET_URL = "http://localhost:8081";
+
+function getSocketBaseUrl() {
+  let runtimeValue;
+  if (typeof window !== "undefined" && window.__ENV && window.__ENV.NEXT_PUBLIC_SOCKET_URL) {
+    runtimeValue = window.__ENV.NEXT_PUBLIC_SOCKET_URL;
+  }
+  const candidate = runtimeValue || process.env.NEXT_PUBLIC_SOCKET_URL || DEFAULT_SOCKET_URL;
+  return candidate.replace(/\/$/, "");
+}
 
 export default function Page() {
   const [players, setPlayers] = useState([]);
@@ -66,7 +76,7 @@ export default function Page() {
   }, [awaitingNext]);
 
   useEffect(() => {
-    const url = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:8081";
+    const url = getSocketBaseUrl();
     const s = io(url, { transports: ["websocket"], reconnection: true });
     setSocket(s);
 
@@ -176,8 +186,8 @@ export default function Page() {
     };
   }, [loadingPassage, passage.length, startFallbackRace]);
   useEffect(() => {
-    const base = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:8081";
-    const url = `${base.replace(/\/$/, "")}/scores`;
+    const base = getSocketBaseUrl();
+    const url = `${base}/scores`;
     fetch(url).then(async (res) => {
       if (!res.ok) return;
       const data = await res.json();
