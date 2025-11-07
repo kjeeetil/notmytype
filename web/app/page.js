@@ -670,11 +670,53 @@ function createBeatEngine() {
     return createSilentBeatEngine("Audio unavailable during server render");
   }
 
-  const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
-  if (!AudioContextCtor) {
-    console.warn("Web Audio API is not supported in this environment");
-    return createSilentBeatEngine("Web Audio API not supported");
-  }
+  let AudioContextCtor = window.AudioContext || window.webkitAudioContext || null;
+  let loadAudioContextPromise = null;
+
+  const ensureAudioContextCtor = async () => {
+    if (AudioContextCtor) {
+      return AudioContextCtor;
+    }
+    if (!loadAudioContextPromise) {
+      loadAudioContextPromise = (async () => {
+        try {
+          const mod = await import("standardized-audio-context");
+          if (typeof mod.isSupported === "function") {
+            try {
+              const supported = await mod.isSupported();
+              if (!supported) {
+                console.warn("Standardized AudioContext reports unsupported environment");
+                return null;
+              }
+            } catch (err) {
+              console.warn("Failed to verify audio context support", err);
+            }
+          }
+          const candidates = [
+            mod.AudioContext,
+            mod.MinimalAudioContext,
+            mod?.default?.AudioContext,
+            mod?.default
+          ];
+          const ctor = candidates.find((candidate) => typeof candidate === "function") || null;
+          if (ctor) {
+            AudioContextCtor = ctor;
+            if (typeof window.AudioContext !== "function") {
+              window.AudioContext = ctor;
+            }
+            if (typeof window.webkitAudioContext !== "function") {
+              window.webkitAudioContext = ctor;
+            }
+            return AudioContextCtor;
+          }
+        } catch (error) {
+          console.warn("Failed to dynamically import standardized-audio-context", error);
+        }
+        return null;
+      })();
+    }
+    return loadAudioContextPromise;
+  };
 
   class BeatEngineImpl {
     constructor() {
@@ -690,13 +732,19 @@ function createBeatEngine() {
       this.supported = true;
     }
 
-    ensureContext() {
+    async ensureContext() {
       if (this.unsupported) {
         throw new Error("Audio context unavailable");
       }
       if (this.ctx) return;
+      const ctor = await ensureAudioContextCtor();
+      if (!ctor) {
+        this.unsupported = true;
+        this.supported = false;
+        throw new Error("Web Audio API not supported");
+      }
       try {
-        this.ctx = new AudioContextCtor();
+        this.ctx = new ctor();
         this.masterGain = this.ctx.createGain();
         this.masterGain.gain.value = 0.4;
         this.masterGain.connect(this.ctx.destination);
@@ -711,7 +759,7 @@ function createBeatEngine() {
 
     async start() {
       try {
-        this.ensureContext();
+        await this.ensureContext();
       } catch (err) {
         return Promise.reject(err);
       }
@@ -720,7 +768,7 @@ function createBeatEngine() {
         this.ctx = null;
         this.masterGain = null;
         try {
-          this.ensureContext();
+          await this.ensureContext();
         } catch (err) {
           return Promise.reject(err);
         }
