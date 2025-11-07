@@ -28,6 +28,7 @@ export default function Page() {
   const [bestMinuteCpm, setBestMinuteCpm] = useState(0);
   const [now, setNow] = useState(Date.now());
   const completionRef = useRef(false);
+  const [scores, setScores] = useState([]);
 
   const inputRef = useRef(null);
   const pendingMatchRef = useRef(true);
@@ -35,6 +36,9 @@ export default function Page() {
   const fallbackTimerRef = useRef(null);
   const passageRef = useRef("");
   const awaitingNextRef = useRef(false);
+  const [passagesCompleted, setPassagesCompleted] = useState(0);
+  const [showNamePrompt, setShowNamePrompt] = useState(false);
+  const [pendingScore, setPendingScore] = useState(null);
 
   const startFallbackRace = useCallback(() => {
     const fallback = pickFallbackPassage();
@@ -226,6 +230,21 @@ export default function Page() {
     setCountdownMs(null);
     setPlayers([]);
 
+    setPassagesCompleted((prev) => prev + 1);
+    const completed = passagesCompleted + 1;
+    if (completed >= 3) {
+      const totalChars = events.reduce((sum, evt) => sum + evt.count, 0);
+      const durationMs = events.length ? now - events[0].time : 1;
+      const avgCpm = durationMs > 0 ? (totalChars / durationMs) * 60000 : 0;
+      setPendingScore(Math.round(avgCpm));
+      setShowNamePrompt(true);
+      setPassagesCompleted(0);
+      setAwaitingNext(false);
+      setLoadingPassage(false);
+      setPassage("");
+      return;
+    }
+
     if (socket?.connected) {
       setAwaitingNext(true);
       setPassage("");
@@ -301,6 +320,7 @@ export default function Page() {
         bestMinute={bestMinuteCpm}
         series={effectiveMetrics.series}
       />
+      <Scoreboard scores={scores} />
 
       <div style={{ marginTop: 24 }}>
         {(players || []).map((p) => {
