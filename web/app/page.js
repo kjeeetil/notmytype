@@ -139,28 +139,16 @@ export default function Page() {
   }, [loadingPassage, passage.length, startFallbackRace]);
 
   const metrics = useMemo(() => computeMetrics(events, now), [events, now]);
-  const [displayMetrics, setDisplayMetrics] = useState(() => metrics);
+  const [lastMetrics, setLastMetrics] = useState(() => metrics);
   useEffect(() => {
-    const freeze = awaitingNext || loadingPassage;
-    if (!freeze) {
-      setDisplayMetrics(metrics);
-      return;
+    const hasSignal = metrics.floatingCpm > 0 || metrics.minuteCpm > 0 || metrics.series.some(p => p.value > 0);
+    if (!loadingPassage && !awaitingNext) {
+      setLastMetrics(metrics);
+    } else if (hasSignal) {
+      setLastMetrics(metrics);
     }
-    if (
-      metrics.floatingCpm > displayMetrics.floatingCpm ||
-      metrics.minuteCpm > displayMetrics.minuteCpm ||
-      metrics.series.length > displayMetrics.series.length
-    ) {
-      setDisplayMetrics(metrics);
-    }
-  }, [
-    metrics,
-    awaitingNext,
-    loadingPassage,
-    displayMetrics.floatingCpm,
-    displayMetrics.minuteCpm,
-    displayMetrics.series.length
-  ]);
+  }, [metrics, loadingPassage, awaitingNext]);
+  const effectiveMetrics = (!awaitingNext && !loadingPassage) ? metrics : lastMetrics;
   const decoratedPassage = useMemo(() => {
     return passage.split("").map((ch, idx) => {
       const typedChar = typed[idx];
@@ -251,7 +239,7 @@ export default function Page() {
 
   return (
     <div style={{ position: "relative", minHeight: "100vh", overflow: "hidden", background: "#000" }}>
-      <Starfield speed={displayMetrics.minuteCpm} />
+      <Starfield speed={effectiveMetrics.minuteCpm} />
       <main style={{ position: "relative", zIndex: 1, maxWidth: 720, margin: "40px auto", padding: 16, color: "#f8fafc" }}>
       <h1 style={{ fontSize: 28, fontWeight: 600, marginBottom: 12 }}>Torfinns Touch-Trainer</h1>
       <div style={{ border: "1px solid rgba(255,255,255,0.2)", borderRadius: 12, padding: 16, background: "rgba(0,0,0,0.5)" }}>
@@ -308,10 +296,10 @@ export default function Page() {
       </div>
 
       <StatsPanel
-        floating={displayMetrics.floatingCpm}
+        floating={effectiveMetrics.floatingCpm}
         peak={peakCpm}
         bestMinute={bestMinuteCpm}
-        series={displayMetrics.series}
+        series={effectiveMetrics.series}
       />
 
       <div style={{ marginTop: 24 }}>
