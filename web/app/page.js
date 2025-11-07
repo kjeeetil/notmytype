@@ -206,6 +206,9 @@ export default function Page() {
   useEffect(() => {
     awaitingNextRef.current = awaitingNext;
   }, [awaitingNext]);
+  useEffect(() => {
+    setAudioEnabled(false);
+  }, []);
 
   useEffect(() => {
     const url = getSocketBaseUrl();
