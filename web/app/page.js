@@ -47,11 +47,19 @@ export default function Page() {
       <div style={{ border: "1px solid #ddd", borderRadius: 12, padding: 16 }}>
         <p style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 18, lineHeight: 1.6 }}>
           {passage.split("").map((ch, i) => (
-            <span key={i} style={{
-              opacity: i < cursor ? 0.4 : 1,
-              textDecoration: i === cursor ? "underline" : "none",
-              textDecorationThickness: i === cursor ? "3px" : undefined
-            }}>{ch}</span>
+            <span
+              key={i}
+              style={{
+                fontWeight: i < cursor ? 700 : 400,
+                color: i < cursor ? "#0f766e" : "#1f2937",
+                textDecoration: i === cursor ? "underline" : "none",
+                textDecorationThickness: i === cursor ? "3px" : undefined,
+                textDecorationColor: "#0f172a",
+                transition: "color 120ms ease, font-weight 120ms ease"
+              }}
+            >
+              {ch}
+            </span>
           ))}
         </p>
         <input
