@@ -8,8 +8,10 @@ export default function Page() {
   const [startedAt, setStartedAt] = useState(null);
   const [cursor, setCursor] = useState(0);
   const [typed, setTyped] = useState("");
+  const [passage, setPassage] = useState("Loading passage…");
+  const [awaitingNext, setAwaitingNext] = useState(false);
+  const completionRef = useRef(false);
 
-  const passage = "Fast foxes jump over lazy dogs in midnight races.";
   const inputRef = useRef(null);
   const [socket, setSocket] = useState(null);
 
@@ -21,11 +23,19 @@ export default function Page() {
     s.on("room:state", (msg) => {
       setPlayers(msg.players || []);
       setCountdownMs(msg.countdownMs);
+      if (msg.passage) {
+        setPassage(msg.passage);
+        completionRef.current = false;
+        setAwaitingNext(false);
+      }
     });
     s.on("race:start", (msg) => {
       setStartedAt(msg.startedAt);
+      if (msg.passage) setPassage(msg.passage);
+      completionRef.current = false;
       setCursor(0);
       setTyped("");
+      setAwaitingNext(false);
       inputRef.current?.focus();
     });
     s.on("race:progress", (msg) => {
@@ -35,7 +45,7 @@ export default function Page() {
   }, []);
 
   function onKey(e) {
-    if (!socket || startedAt === null) return;
+    if (!socket || startedAt === null || !passage.length) return;
     const expected = passage[cursor] ?? "";
     const key = e.key.length === 1 ? e.key : (e.key === " " ? " " : "");
     if (!key) return;
@@ -44,13 +54,33 @@ export default function Page() {
   }
 
   function onChange(e) {
-    const value = e.target.value.slice(0, passage.length);
+    const limit = passage.length || undefined;
+    const value = typeof limit === "number" ? e.target.value.slice(0, limit) : e.target.value;
     setTyped(value);
     let correctCount = 0;
-    while (correctCount < value.length && value[correctCount] === passage[correctCount]) {
+    while (correctCount < value.length && passage[correctCount] === value[correctCount]) {
       correctCount += 1;
     }
     setCursor(correctCount);
+    if (
+      !completionRef.current &&
+      passage.length > 0 &&
+      correctCount === passage.length &&
+      value.length === passage.length
+    ) {
+      handleCompletion();
+    }
+  }
+
+  function handleCompletion() {
+    completionRef.current = true;
+    setTyped("");
+    setCursor(0);
+    setStartedAt(null);
+    setCountdownMs(null);
+    setPlayers([]);
+    setAwaitingNext(true);
+    socket?.emit("quick:match");
   }
 
   return (
@@ -79,16 +109,33 @@ export default function Page() {
           onKeyDown={onKey}
           onChange={onChange}
           value={typed}
-          placeholder={startedAt ? "Type here…" : "Waiting to start…"}
+          placeholder={
+            awaitingNext
+              ? "Loading next passage…"
+              : startedAt
+              ? "Type here…"
+              : "Waiting to start…"
+          }
+          disabled={awaitingNext}
           spellCheck="false"
           autoComplete="off"
-          style={{ width: "100%", marginTop: 12, padding: 12, borderRadius: 10, border: "1px solid #ccc", outline: "none", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
+          style={{
+            width: "100%",
+            marginTop: 12,
+            padding: 12,
+            borderRadius: 10,
+            border: "1px solid #ccc",
+            outline: "none",
+            fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+            background: awaitingNext ? "#f3f4f6" : "#fff"
+          }}
         />
       </div>
 
       <div style={{ marginTop: 24 }}>
         {(players || []).map((p) => {
-          const progress = Math.min(100, ((p.progress || 0) / passage.length) * 100);
+          const denominator = passage.length || 1;
+          const progress = Math.min(100, ((p.progress || 0) / denominator) * 100);
           return (
             <div key={p.id} style={{ marginBottom: 10 }}>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>

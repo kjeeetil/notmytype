@@ -4,6 +4,12 @@ import { b64url, computeWPM, computeAcc } from "./lib/stats.js";
 
 const port = process.env.PORT || 8080;
 
+const passages = [
+  "Fast foxes jump over lazy dogs in midnight races.",
+  "Neon lights flicker softly while keyboards clack in rhythm.",
+  "Typing swiftly trains the mind to think before the fingers move."
+];
+
 // Very permissive CORS for demo; tighten in prod
 const server = http.createServer((req, res) => {
   // health check endpoint
@@ -28,7 +34,7 @@ const rooms = new Map();
 
 function createRoom() {
   const id = Math.random().toString(36).slice(2, 8);
-  const passage = "Fast foxes jump over lazy dogs in midnight races.";
+  const passage = passages[Math.floor(Math.random() * passages.length)];
   const state = { id, passage, passageHash: b64url(passage), players: new Map(), startedAt: undefined, countdownAt: undefined };
   rooms.set(id, state);
   return state;
@@ -51,14 +57,15 @@ io.on("connection", (socket) => {
       roomId: room.id,
       players: [...room.players.values()],
       countdownMs: room.countdownAt ? Math.max(0, room.countdownAt - Date.now()) : null,
-      passageLen: room.passage.length
+      passageLen: room.passage.length,
+      passage: room.passage
     });
 
     if (!room.countdownAt) {
       room.countdownAt = Date.now() + 5000;
       setTimeout(() => {
         room.startedAt = Date.now();
-        io.to(room.id).emit("race:start", { raceId: room.id, passageHash: room.passageHash, startedAt: room.startedAt });
+        io.to(room.id).emit("race:start", { raceId: room.id, passageHash: room.passageHash, passage: room.passage, startedAt: room.startedAt });
       }, 5000);
     }
   });
@@ -99,7 +106,8 @@ io.on("connection", (socket) => {
         roomId: currentRoom.id,
         players: [...currentRoom.players.values()],
         countdownMs: currentRoom.countdownAt ? Math.max(0, currentRoom.countdownAt - Date.now()) : null,
-        passageLen: currentRoom.passage.length
+        passageLen: currentRoom.passage.length,
+        passage: currentRoom.passage
       });
     }
   });
