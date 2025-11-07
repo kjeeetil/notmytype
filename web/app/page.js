@@ -30,24 +30,19 @@ export default function Page() {
   const completionRef = useRef(false);
 
   const inputRef = useRef(null);
+  const pendingMatchRef = useRef(true);
   const [socket, setSocket] = useState(null);
 
   useEffect(() => {
     const url = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:8081";
-    const s = io(url, { transports: ["websocket"] });
+    const s = io(url, { transports: ["websocket"], reconnection: true });
     setSocket(s);
-
-    const requestMatch = () => s.emit("quick:match");
-    if (s.connected) {
-      requestMatch();
-    } else {
-      s.once("connect", requestMatch);
-    }
 
     const useFallback = () => {
       setPassage((prev) => prev || pickFallbackPassage());
       setLoadingPassage(false);
       setAwaitingNext(false);
+      pendingMatchRef.current = true;
     };
 
     s.on("room:state", (msg) => {
@@ -84,6 +79,21 @@ export default function Page() {
     });
     return () => { s.close(); };
   }, []);
+
+  useEffect(() => {
+    if (!socket) return;
+    const maybeRequestMatch = () => {
+      if (pendingMatchRef.current) {
+        socket.emit("quick:match");
+        pendingMatchRef.current = false;
+      }
+    };
+    socket.on("connect", maybeRequestMatch);
+    maybeRequestMatch();
+    return () => {
+      socket.off("connect", maybeRequestMatch);
+    };
+  }, [socket]);
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
@@ -161,6 +171,14 @@ export default function Page() {
     }
   }
 
+  const queueMatchRequest = useCallback(() => {
+    pendingMatchRef.current = true;
+    if (socket?.connected) {
+      socket.emit("quick:match");
+      pendingMatchRef.current = false;
+    }
+  }, [socket]);
+
   function handleCompletion() {
     completionRef.current = true;
     setTyped("");
@@ -176,12 +194,13 @@ export default function Page() {
       setAwaitingNext(true);
       setPassage("");
       setLoadingPassage(true);
-      socket.emit("quick:match");
+      queueMatchRequest();
     } else {
       const nextPassage = pickFallbackPassage();
       setAwaitingNext(false);
       setPassage(nextPassage);
       setLoadingPassage(false);
+      queueMatchRequest();
     }
   }
 
