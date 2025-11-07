@@ -7,6 +7,7 @@ export default function Page() {
   const [countdownMs, setCountdownMs] = useState(null);
   const [startedAt, setStartedAt] = useState(null);
   const [cursor, setCursor] = useState(0);
+  const [typed, setTyped] = useState("");
 
   const passage = "Fast foxes jump over lazy dogs in midnight races.";
   const inputRef = useRef(null);
@@ -23,6 +24,8 @@ export default function Page() {
     });
     s.on("race:start", (msg) => {
       setStartedAt(msg.startedAt);
+      setCursor(0);
+      setTyped("");
       inputRef.current?.focus();
     });
     s.on("race:progress", (msg) => {
@@ -38,7 +41,16 @@ export default function Page() {
     if (!key) return;
     const correct = key === expected;
     socket.emit("race:keystroke", { t: Date.now(), key, correct });
-    if (correct) setCursor(c => c + 1);
+  }
+
+  function onChange(e) {
+    const value = e.target.value.slice(0, passage.length);
+    setTyped(value);
+    let correctCount = 0;
+    while (correctCount < value.length && value[correctCount] === passage[correctCount]) {
+      correctCount += 1;
+    }
+    setCursor(correctCount);
   }
 
   return (
@@ -65,8 +77,12 @@ export default function Page() {
         <input
           ref={inputRef}
           onKeyDown={onKey}
+          onChange={onChange}
+          value={typed}
           placeholder={startedAt ? "Type here…" : "Waiting to start…"}
-          style={{ width: "100%", marginTop: 12, padding: 12, borderRadius: 10, border: "1px solid #ccc", outline: "none" }}
+          spellCheck="false"
+          autoComplete="off"
+          style={{ width: "100%", marginTop: 12, padding: 12, borderRadius: 10, border: "1px solid #ccc", outline: "none", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
         />
       </div>
 
