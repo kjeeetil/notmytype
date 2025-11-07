@@ -8,7 +8,7 @@ COPY server ./
 FROM node:20-alpine AS web-builder
 WORKDIR /web
 COPY web/package*.json ./
-RUN npm install
+RUN npm install --omit=dev
 COPY web ./
 RUN npm run build
 

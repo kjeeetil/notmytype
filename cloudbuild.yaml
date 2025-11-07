@@ -13,19 +13,28 @@
 
 steps:
   # Build & push server image
-  - name: 'gcr.io/cloud-builders/docker'
+  - id: 'build-server'
+    waitFor: ['-']
+    name: 'gcr.io/cloud-builders/docker'
     args: ['build','-t','${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/${_SERVICE_SERVER}:${SHORT_SHA}','server']
-  - name: 'gcr.io/cloud-builders/docker'
+  - id: 'push-server'
+    waitFor: ['build-server']
+    name: 'gcr.io/cloud-builders/docker'
     args: ['push','${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/${_SERVICE_SERVER}:${SHORT_SHA}']
 
   # Build & push web image
-  - name: 'gcr.io/cloud-builders/docker'
+  - id: 'build-web'
+    waitFor: ['-']
+    name: 'gcr.io/cloud-builders/docker'
     args: ['build','-t','${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/${_SERVICE_WEB}:${SHORT_SHA}','web']
-  - name: 'gcr.io/cloud-builders/docker'
+  - id: 'push-web'
+    waitFor: ['build-web']
+    name: 'gcr.io/cloud-builders/docker'
     args: ['push','${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/${_SERVICE_WEB}:${SHORT_SHA}']
 
   # Deploy server first
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  - waitFor: ['push-server']
+    name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: bash
     args:
       - '-c'
@@ -33,7 +42,8 @@ steps:
         gcloud run deploy ${_SERVICE_SERVER}           --image=${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/${_SERVICE_SERVER}:${SHORT_SHA}           --region=${_REGION}           --platform=managed           --allow-unauthenticated           --min-instances=${_MIN_INSTANCES:-0}           --max-instances=${_MAX_INSTANCES:-10}           --concurrency=${_SERVER_CONCURRENCY:-80}
 
   # Read back server URL and deploy web with NEXT_PUBLIC_SOCKET_URL pointing to it
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  - waitFor: ['push-web','push-server']
+    name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: bash
     args:
       - '-c'

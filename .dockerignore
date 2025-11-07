@@ -1,0 +1,14 @@
+node_modules
+.next
+.git
+.gitignore
+docker-compose.yml
+README.md
+cloudbuild.yaml
+*.log
+server/node_modules
+web/node_modules
+web/.next
+server/tests
+server/vitest.config.js
+web/.turbo
