@@ -9,6 +9,7 @@
 #   _MIN_INSTANCES      (e.g., 1)
 #   _MAX_INSTANCES      (e.g., 10)
 #   _SERVER_CONCURRENCY (e.g., 80)
+#   _KEEP_RELEASES      (e.g., 5)  # number of recent images to retain per service
 
 steps:
   # Build & push server image
@@ -40,6 +41,38 @@ steps:
         SERVER_URL=$(gcloud run services describe ${_SERVICE_SERVER} --region=${_REGION} --format='value(status.url)')
         echo "Server URL: $SERVER_URL"
         gcloud run deploy ${_SERVICE_WEB}           --image=${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/${_SERVICE_WEB}:${SHORT_SHA}           --region=${_REGION}           --platform=managed           --allow-unauthenticated           --min-instances=${_MIN_INSTANCES:-0}           --max-instances=${_MAX_INSTANCES:-10}           --set-env-vars=NEXT_PUBLIC_SOCKET_URL=$SERVER_URL
+
+  # Prune older images in Artifact Registry to keep storage tidy
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: bash
+    args:
+      - '-c'
+      - |
+        set -euo pipefail
+        KEEP=${_KEEP_RELEASES:-5}
+        if [[ "${KEEP}" -le 0 ]]; then
+          echo "KEEP_RELEASES is ${KEEP}; skipping prune."
+          exit 0
+        fi
+        images=("${_SERVICE_SERVER}" "${_SERVICE_WEB}")
+        for image in "${images[@]}"; do
+          IMAGE_PATH="${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/${image}"
+          echo "Pruning ${IMAGE_PATH}, keeping ${KEEP} most recent images"
+          TMP=$(mktemp)
+          gcloud artifacts docker images list "${IMAGE_PATH}" --sort-by="~UPDATE_TIME" --format="value(DIGEST)" > "${TMP}"
+          TOTAL=$(grep -c '.' "${TMP}" || true)
+          if [[ "${TOTAL}" -le "${KEEP}" ]]; then
+            echo "Only ${TOTAL} images found, nothing to prune."
+            rm -f "${TMP}"
+            continue
+          fi
+          tail -n +"$((KEEP+1))" "${TMP}" | while read -r digest; do
+            [[ -z "${digest}" ]] && continue
+            echo "Deleting ${IMAGE_PATH}@${digest}"
+            gcloud artifacts docker images delete "${IMAGE_PATH}@${digest}" --quiet --delete-tags || true
+          done
+          rm -f "${TMP}"
+        done
 
 images:
   - '${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/${_SERVICE_SERVER}:${SHORT_SHA}'
