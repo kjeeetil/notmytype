@@ -1,5 +1,6 @@
 import http from "http";
 import { Server } from "socket.io";
+import { b64url, computeWPM, computeAcc } from "./lib/stats.js";
 
 const port = process.env.PORT || 8080;
 
@@ -21,15 +22,6 @@ const io = new Server(server, {
     methods: ["GET","POST"]
   }
 });
-
-function b64url(s) { return Buffer.from(s).toString("base64url").slice(0, 16); }
-function computeWPM(correctChars, startedAt) {
-  const mins = (Date.now() - startedAt) / 60000;
-  return mins > 0 ? Math.round((correctChars / 5) / mins) : 0;
-}
-function computeAcc(correct, total) {
-  return total > 0 ? Math.round((correct / total) * 100) : 100;
-}
 
 // In-memory rooms (replace with Redis later)
 const rooms = new Map();
