@@ -892,6 +892,10 @@ function Starfield({ speed }) {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      console.warn("Canvas 2D context unavailable; starfield disabled");
+      return () => {};
+    }
     let width = canvas.width = window.innerWidth;
     let height = canvas.height = window.innerHeight;
     const depth = 1200;
