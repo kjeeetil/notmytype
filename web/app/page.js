@@ -319,7 +319,7 @@ export default function Page() {
                 key={i}
                 style={{
                   fontWeight: token.isCorrect ? 700 : 400,
-                  color: token.isError ? "#dc2626" : token.isCorrect ? "#0f766e" : "#1f2937",
+                  color: token.isError ? "#f87171" : token.isCorrect ? "#14b8a6" : "#e2e8f0",
                   backgroundColor: token.isError ? "rgba(220,38,38,0.15)" : "transparent",
                   textDecoration: token.isCurrent ? "underline" : "none",
                   textDecorationThickness: token.isCurrent ? "3px" : undefined,
