@@ -6,12 +6,16 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "test": "vitest run"
+    "test": "vitest run",
+    "lint": "eslint \"{index.js,lib/**/*.js}\""
   },
   "dependencies": {
     "socket.io": "^4.7.5"
   },
   "devDependencies": {
+    "@eslint/js": "^9.4.0",
+    "eslint": "^9.4.0",
+    "globals": "^15.4.0",
     "vitest": "^1.6.0"
   }
 }
