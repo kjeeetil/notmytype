@@ -139,18 +139,28 @@ export default function Page() {
   }, [loadingPassage, passage.length, startFallbackRace]);
 
   const metrics = useMemo(() => computeMetrics(events, now), [events, now]);
-  const [displayMetrics, setDisplayMetrics] = useState(metrics);
+  const [displayMetrics, setDisplayMetrics] = useState(() => metrics);
   useEffect(() => {
-    const hasActivity = events.length > 0;
-    const shouldUpdate = !awaitingNext && !loadingPassage;
-    if (shouldUpdate || !hasActivity) {
+    const freeze = awaitingNext || loadingPassage;
+    if (!freeze) {
       setDisplayMetrics(metrics);
       return;
     }
-    if (metrics.floatingCpm > 0 || metrics.minuteCpm > 0) {
+    if (
+      metrics.floatingCpm > displayMetrics.floatingCpm ||
+      metrics.minuteCpm > displayMetrics.minuteCpm ||
+      metrics.series.length > displayMetrics.series.length
+    ) {
       setDisplayMetrics(metrics);
     }
-  }, [metrics, awaitingNext, loadingPassage, events.length]);
+  }, [
+    metrics,
+    awaitingNext,
+    loadingPassage,
+    displayMetrics.floatingCpm,
+    displayMetrics.minuteCpm,
+    displayMetrics.series.length
+  ]);
   const decoratedPassage = useMemo(() => {
     return passage.split("").map((ch, idx) => {
       const typedChar = typed[idx];
@@ -240,9 +250,11 @@ export default function Page() {
   }
 
   return (
-    <main style={{ maxWidth: 720, margin: "40px auto", padding: 16 }}>
+    <div style={{ position: "relative", minHeight: "100vh", overflow: "hidden", background: "#000" }}>
+      <Starfield speed={displayMetrics.minuteCpm} />
+      <main style={{ position: "relative", zIndex: 1, maxWidth: 720, margin: "40px auto", padding: 16, color: "#f8fafc" }}>
       <h1 style={{ fontSize: 28, fontWeight: 600, marginBottom: 12 }}>Torfinns Touch-Trainer</h1>
-      <div style={{ border: "1px solid #ddd", borderRadius: 12, padding: 16 }}>
+      <div style={{ border: "1px solid rgba(255,255,255,0.2)", borderRadius: 12, padding: 16, background: "rgba(0,0,0,0.5)" }}>
         <p style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 18, lineHeight: 1.6, minHeight: 48 }}>
           {loadingPassage ? (
             <span style={{ color: "#9ca3af" }}>Loading passage...</span>
@@ -288,7 +300,8 @@ export default function Page() {
             border: "1px solid #ccc",
             outline: "none",
             fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-            background: awaitingNext ? "#f3f4f6" : "#fff",
+            background: awaitingNext ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.05)",
+            color: "#f8fafc",
             boxSizing: "border-box"
           }}
         />
@@ -311,8 +324,8 @@ export default function Page() {
                 <span>{p.handle || p.id}</span>
                 <span>{p.wpm ?? 0} WPM • {p.acc ?? 100}%</span>
               </div>
-              <div style={{ height: 8, background: "#eee", borderRadius: 8 }}>
-                <div style={{ width: `${progress}%`, height: 8, background: "#000", borderRadius: 8 }} />
+              <div style={{ height: 8, background: "rgba(255,255,255,0.2)", borderRadius: 8 }}>
+                <div style={{ width: `${progress}%`, height: 8, background: "#f8fafc", borderRadius: 8 }} />
               </div>
             </div>
           );
@@ -323,6 +336,7 @@ export default function Page() {
         <div style={{ marginTop: 12, fontSize: 14 }}>Race starts in {Math.ceil(countdownMs/1000)}s</div>
       )}
     </main>
+    </div>
   );
 }
 
@@ -375,13 +389,13 @@ function generateSeries(events, now) {
 function StatsPanel({ floating, peak, bestMinute, series }) {
   const fmt = (value) => `${value.toFixed(0)} cpm`;
   return (
-    <section style={{ marginTop: 24, padding: 16, border: "1px solid #e5e7eb", borderRadius: 12 }}>
+    <section style={{ marginTop: 24, padding: 16, border: "1px solid rgba(255,255,255,0.2)", borderRadius: 12, background: "rgba(8,8,12,0.6)" }}>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
         <Stat label="Floating avg (10s)" value={fmt(floating)} />
         <Stat label="Peak avg (10s)" value={fmt(peak)} />
         <Stat label="Best sustained (60s)" value={fmt(bestMinute)} />
       </div>
-      <Chart series={series} />
+        <Chart series={series} />
     </section>
   );
 }
@@ -394,8 +408,8 @@ function pickFallbackPassage() {
 function Stat({ label, value }) {
   return (
     <div style={{ flex: "1 1 160px" }}>
-      <div style={{ fontSize: 12, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</div>
-      <div style={{ fontSize: 22, fontWeight: 600 }}>{value}</div>
+      <div style={{ fontSize: 12, color: "rgba(248,250,252,0.6)", textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</div>
+      <div style={{ fontSize: 22, fontWeight: 600, color: "#f8fafc" }}>{value}</div>
     </div>
   );
 }
@@ -417,7 +431,7 @@ function Chart({ series }) {
     <svg
       viewBox={`0 0 ${width} ${height}`}
       preserveAspectRatio="none"
-      style={{ width: "100%", marginTop: 16, background: "#f8fafc", borderRadius: 12 }}
+      style={{ width: "100%", marginTop: 16, background: "rgba(15,23,42,0.6)", borderRadius: 12 }}
     >
       <polyline fill="none" stroke="#0f766e" strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" points={pts} />
       <polygon
@@ -426,5 +440,113 @@ function Chart({ series }) {
         points={`${pts} ${width},${height} 0,${height}`}
       />
     </svg>
+  );
+}
+
+function Starfield({ speed }) {
+  const canvasRef = useRef(null);
+  const speedRef = useRef(speed);
+
+  useEffect(() => {
+    speedRef.current = speed;
+  }, [speed]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    let width = canvas.width = window.innerWidth;
+    let height = canvas.height = window.innerHeight;
+    const depth = 1200;
+    const starCount = 500;
+    const stars = [];
+
+    const resetStar = (star, initial = false) => {
+      star.x = (Math.random() * 2 - 1) * width;
+      star.y = (Math.random() * 2 - 1) * height;
+      star.z = initial ? Math.random() * depth : depth;
+    };
+
+    for (let i = 0; i < starCount; i++) {
+      stars.push({ x: 0, y: 0, z: 0 });
+      resetStar(stars[i], true);
+    }
+
+    const handleResize = () => {
+      width = canvas.width = window.innerWidth;
+      height = canvas.height = window.innerHeight;
+    };
+    window.addEventListener("resize", handleResize);
+
+    const project = (star) => {
+      const perspective = width / 2;
+      const scale = perspective / (star.z || 1);
+      return {
+        x: star.x * scale + width / 2,
+        y: star.y * scale + height / 2
+      };
+    };
+
+    let animationFrame;
+    const render = () => {
+      const cpm = speedRef.current || 0;
+      const normalized = Math.min(cpm / 400, 2);
+      const hyperspace = normalized >= 1;
+      const starSpeed = 4 + normalized * 12;
+      ctx.fillStyle = hyperspace ? "rgba(0,0,0,0.65)" : "rgba(0,0,0,0.85)";
+      ctx.fillRect(0, 0, width, height);
+
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = hyperspace ? 2 : 1;
+      ctx.globalAlpha = hyperspace ? 0.9 : 0.7;
+
+      for (const star of stars) {
+        const prevZ = star.z;
+        star.z -= starSpeed;
+        if (star.z <= 5) {
+          resetStar(star);
+          continue;
+        }
+        const prev = project({ ...star, z: prevZ });
+        const curr = project(star);
+
+        if (
+          curr.x < 0 || curr.x > width ||
+          curr.y < 0 || curr.y > height
+        ) {
+          resetStar(star);
+          continue;
+        }
+
+        ctx.beginPath();
+        ctx.moveTo(prev.x, prev.y);
+        ctx.lineTo(curr.x, curr.y);
+        ctx.stroke();
+      }
+
+      animationFrame = requestAnimationFrame(render);
+    };
+
+    render();
+
+    return () => {
+      cancelAnimationFrame(animationFrame);
+      window.removeEventListener("resize", handleResize);
+    };
+  }, []);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      style={{
+        position: "fixed",
+        inset: 0,
+        width: "100%",
+        height: "100%",
+        zIndex: 0,
+        pointerEvents: "none",
+        background: "black"
+      }}
+    />
   );
 }
