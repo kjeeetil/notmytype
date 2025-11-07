@@ -24,7 +24,6 @@ ENV NEXT_PUBLIC_SOCKET_URL=http://localhost:8081
 COPY --from=server-deps /srv ./server
 COPY --from=web-builder /web/.next/standalone ./web
 COPY --from=web-builder /web/.next/static ./web/.next/static
-COPY --from=web-builder /web/public ./web/public
 COPY start.sh ./start.sh
 RUN chmod +x start.sh
 
