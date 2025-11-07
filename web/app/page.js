@@ -139,6 +139,18 @@ export default function Page() {
   }, [loadingPassage, passage.length, startFallbackRace]);
 
   const metrics = useMemo(() => computeMetrics(events, now), [events, now]);
+  const [displayMetrics, setDisplayMetrics] = useState(metrics);
+  useEffect(() => {
+    const hasActivity = events.length > 0;
+    const shouldUpdate = !awaitingNext && !loadingPassage;
+    if (shouldUpdate || !hasActivity) {
+      setDisplayMetrics(metrics);
+      return;
+    }
+    if (metrics.floatingCpm > 0 || metrics.minuteCpm > 0) {
+      setDisplayMetrics(metrics);
+    }
+  }, [metrics, awaitingNext, loadingPassage, events.length]);
   const decoratedPassage = useMemo(() => {
     return passage.split("").map((ch, idx) => {
       const typedChar = typed[idx];
@@ -283,10 +295,10 @@ export default function Page() {
       </div>
 
       <StatsPanel
-        floating={metrics.floatingCpm}
+        floating={displayMetrics.floatingCpm}
         peak={peakCpm}
         bestMinute={bestMinuteCpm}
-        series={metrics.series}
+        series={displayMetrics.series}
       />
 
       <div style={{ marginTop: 24 }}>
