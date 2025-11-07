@@ -46,9 +46,7 @@ export default function Page() {
     setPlayers([]);
     setCursor(0);
     setTyped("");
-    setEvents([]);
-    setPeakCpm(0);
-    setBestMinuteCpm(0);
+    setEvents((prev) => [...prev]);
     completionRef.current = false;
   }, []);
   useEffect(() => {
@@ -91,9 +89,6 @@ export default function Page() {
       setCursor(0);
       setTyped("");
       setAwaitingNext(false);
-      setEvents([]);
-      setPeakCpm(0);
-      setBestMinuteCpm(0);
       inputRef.current?.focus();
     });
     s.on("race:progress", (msg) => {
@@ -163,9 +158,10 @@ export default function Page() {
     if (delta <= 0) return;
     const time = Date.now();
     setEvents((prev) => {
-      const next = [...prev, { time, count: delta }]
-        .filter((evt) => evt.time >= time - MAX_HISTORY_MS);
-      return next;
+      const filtered = prev.filter((evt) => evt.time >= time - MAX_HISTORY_MS);
+      const headroom = filtered.reduce((sum, evt) => sum + evt.count, 0);
+      const trimmedDelta = Math.max(0, Math.min(delta, passage.length - cursor));
+      return [...filtered, { time, count: trimmedDelta, cumulative: headroom + trimmedDelta }];
     });
   }, []);
 
@@ -219,9 +215,6 @@ export default function Page() {
     setStartedAt(null);
     setCountdownMs(null);
     setPlayers([]);
-    setEvents([]);
-    setPeakCpm(0);
-    setBestMinuteCpm(0);
 
     if (socket?.connected) {
       setAwaitingNext(true);
@@ -322,31 +315,33 @@ export default function Page() {
 }
 
 function computeMetrics(events, now) {
-  if (!events.length) {
-    return {
-      floatingCpm: 0,
-      minuteCpm: 0,
-      series: generateSeries([], now)
-    };
-  }
-  const floatingCpm = windowAverage(events, now, WINDOW_FLOAT_MS);
-  const minuteCpm = windowAverage(events, now, WINDOW_MINUTE_MS);
+  const aligned = events.reduce((acc, evt) => {
+    const last = acc[acc.length - 1];
+    if (last && Math.abs(last.time - evt.time) < 5) {
+      last.count += evt.count;
+      last.cumulative += evt.count;
+    } else {
+      acc.push({ ...evt });
+    }
+    return acc;
+  }, []);
+  const floatingCpm = windowAverage(aligned, now, WINDOW_FLOAT_MS);
+  const minuteCpm = windowAverage(aligned, now, WINDOW_MINUTE_MS);
   return {
     floatingCpm,
     minuteCpm,
-    series: generateSeries(events, now)
+    series: generateSeries(aligned, now)
   };
 }
 
 function windowAverage(events, endTime, windowMs) {
-  if (windowMs <= 0) return 0;
+  if (windowMs <= 0 || !events.length) return 0;
   const start = endTime - windowMs;
   let sum = 0;
-  for (const evt of events) {
-    if (evt.time > endTime) break;
-    if (evt.time >= start) {
-      sum += evt.count;
-    }
+  for (let i = events.length - 1; i >= 0; i--) {
+    const evt = events[i];
+    if (evt.time < start) break;
+    if (evt.time <= endTime) sum += evt.count;
   }
   if (sum === 0) return 0;
   return (sum / windowMs) * 60000;
