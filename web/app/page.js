@@ -39,6 +39,7 @@ export default function Page() {
   const [passagesCompleted, setPassagesCompleted] = useState(0);
   const [showNamePrompt, setShowNamePrompt] = useState(false);
   const [pendingScore, setPendingScore] = useState(null);
+  const [playerName, setPlayerName] = useState("");
 
   const startFallbackRace = useCallback(() => {
     const fallback = pickFallbackPassage();
@@ -124,6 +125,18 @@ export default function Page() {
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, []);
+  useEffect(() => {
+    const stored = localStorage.getItem("scores");
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) setScores(parsed);
+      } catch { /* ignore */ }
+    }
+  }, []);
+  useEffect(() => {
+    localStorage.setItem("scores", JSON.stringify(scores.slice(0, 10)));
+  }, [scores]);
 
   useEffect(() => {
     if (fallbackTimerRef.current) {
@@ -255,6 +268,23 @@ export default function Page() {
       queueMatchRequest();
     }
   }
+
+  const submitScore = (name) => {
+    if (pendingScore === null) return;
+    const entry = {
+      name: name || "Anonymous",
+      score: pendingScore,
+      timestamp: Date.now()
+    };
+    setScores((prev) => [entry, ...prev].slice(0, 10));
+    setPendingScore(null);
+    setShowNamePrompt(false);
+    setPlayerName(name);
+    setAwaitingNext(false);
+    setLoadingPassage(false);
+    setPassage("");
+    queueMatchRequest();
+  };
 
   return (
     <div style={{ position: "relative", minHeight: "100vh", overflow: "hidden", background: "#000" }}>
@@ -448,6 +478,23 @@ function Chart({ series }) {
         points={`${pts} ${width},${height} 0,${height}`}
       />
     </svg>
+  );
+}
+
+function Scoreboard({ scores }) {
+  if (!scores.length) return null;
+  return (
+    <section style={{ marginTop: 24, padding: 16, border: "1px solid rgba(255,255,255,0.2)", borderRadius: 12, background: "rgba(3,7,18,0.7)" }}>
+      <h2 style={{ marginBottom: 12, fontSize: 18, fontWeight: 600 }}>Recent Runs</h2>
+      <div style={{ display: "grid", rowGap: 8 }}>
+        {scores.slice(0, 10).map((entry, idx) => (
+          <div key={`${entry.name}-${entry.timestamp}-${idx}`} style={{ display: "flex", justifyContent: "space-between", fontSize: 14 }}>
+            <span style={{ color: "#e2e8f0" }}>{entry.name || "Anonymous"}</span>
+            <span style={{ color: "#f8fafc", fontWeight: 600 }}>{entry.score} cpm</span>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
