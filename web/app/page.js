@@ -40,6 +40,8 @@ export default function Page() {
   const [showNamePrompt, setShowNamePrompt] = useState(false);
   const [pendingScore, setPendingScore] = useState(null);
   const [playerName, setPlayerName] = useState("");
+  const scoreInputRef = useRef(null);
+  const [sessionStats, setSessionStats] = useState({ chars: 0, startMs: null });
 
   const startFallbackRace = useCallback(() => {
     const fallback = pickFallbackPassage();
@@ -137,6 +139,13 @@ export default function Page() {
   useEffect(() => {
     localStorage.setItem("scores", JSON.stringify(scores.slice(0, 10)));
   }, [scores]);
+  useEffect(() => {
+    if (showNamePrompt) {
+      setTimeout(() => {
+        scoreInputRef.current?.focus();
+      }, 50);
+    }
+  }, [showNamePrompt]);
 
   useEffect(() => {
     if (fallbackTimerRef.current) {
@@ -184,13 +193,18 @@ export default function Page() {
   const registerProgress = useCallback((delta) => {
     if (delta <= 0) return;
     const time = Date.now();
+    const trimmedDelta = Math.max(0, Math.min(delta, passage.length - cursor));
+    if (!trimmedDelta) return;
     setEvents((prev) => {
       const filtered = prev.filter((evt) => evt.time >= time - MAX_HISTORY_MS);
       const headroom = filtered.reduce((sum, evt) => sum + evt.count, 0);
-      const trimmedDelta = Math.max(0, Math.min(delta, passage.length - cursor));
       return [...filtered, { time, count: trimmedDelta, cumulative: headroom + trimmedDelta }];
     });
-  }, []);
+    setSessionStats((prev) => ({
+      chars: prev.chars + trimmedDelta,
+      startMs: prev.startMs ?? time
+    }));
+  }, [cursor, passage.length]);
 
   function onKey(e) {
     if (!socket || startedAt === null || !passage.length) return;
@@ -246,9 +260,9 @@ export default function Page() {
     setPassagesCompleted((prev) => prev + 1);
     const completed = passagesCompleted + 1;
     if (completed >= 3) {
-      const totalChars = events.reduce((sum, evt) => sum + evt.count, 0);
-      const durationMs = events.length ? now - events[0].time : 1;
-      const avgCpm = durationMs > 0 ? (totalChars / durationMs) * 60000 : 0;
+      const { chars, startMs } = sessionStats;
+      const durationMs = startMs ? Math.max(1, Date.now() - startMs) : 1;
+      const avgCpm = durationMs > 0 ? (chars / durationMs) * 60000 : 0;
       setPendingScore(Math.round(avgCpm));
       setShowNamePrompt(true);
       setPassagesCompleted(0);
@@ -280,9 +294,13 @@ export default function Page() {
     setPendingScore(null);
     setShowNamePrompt(false);
     setPlayerName(name);
-    setAwaitingNext(false);
-    setLoadingPassage(false);
+    setSessionStats({ chars: 0, startMs: null });
+    setEvents([]);
+    setPeakCpm(0);
+    setBestMinuteCpm(0);
     setPassage("");
+    setAwaitingNext(true);
+    setLoadingPassage(true);
     queueMatchRequest();
   };
 
@@ -326,7 +344,7 @@ export default function Page() {
               ? "Type here…"
               : "Waiting to start…"
           }
-          disabled={awaitingNext}
+          disabled={awaitingNext || showNamePrompt}
           spellCheck="false"
           autoComplete="off"
           style={{
@@ -373,7 +391,29 @@ export default function Page() {
       {countdownMs !== null && countdownMs > 0 && (
         <div style={{ marginTop: 12, fontSize: 14 }}>Race starts in {Math.ceil(countdownMs/1000)}s</div>
       )}
-    </main>
+      </main>
+      {showNamePrompt && (
+        <NamePrompt
+          inputRef={scoreInputRef}
+          pendingScore={pendingScore}
+          playerName={playerName}
+          setPlayerName={setPlayerName}
+          onSubmit={submitScore}
+          onSkip={() => {
+            setShowNamePrompt(false);
+            setPendingScore(null);
+            setSessionStats({ chars: 0, startMs: null });
+            setPassagesCompleted(0);
+            setEvents([]);
+            setPeakCpm(0);
+            setBestMinuteCpm(0);
+            setPassage("");
+            setAwaitingNext(true);
+            setLoadingPassage(true);
+            queueMatchRequest();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -482,19 +522,58 @@ function Chart({ series }) {
 }
 
 function Scoreboard({ scores }) {
-  if (!scores.length) return null;
   return (
     <section style={{ marginTop: 24, padding: 16, border: "1px solid rgba(255,255,255,0.2)", borderRadius: 12, background: "rgba(3,7,18,0.7)" }}>
       <h2 style={{ marginBottom: 12, fontSize: 18, fontWeight: 600 }}>Recent Runs</h2>
-      <div style={{ display: "grid", rowGap: 8 }}>
-        {scores.slice(0, 10).map((entry, idx) => (
-          <div key={`${entry.name}-${entry.timestamp}-${idx}`} style={{ display: "flex", justifyContent: "space-between", fontSize: 14 }}>
-            <span style={{ color: "#e2e8f0" }}>{entry.name || "Anonymous"}</span>
-            <span style={{ color: "#f8fafc", fontWeight: 600 }}>{entry.score} cpm</span>
-          </div>
-        ))}
-      </div>
+      {scores.length === 0 ? (
+        <div style={{ color: "#94a3b8" }}>Complete three passages to record your first score.</div>
+      ) : (
+        <div style={{ display: "grid", rowGap: 8 }}>
+          {scores.slice(0, 10).map((entry, idx) => (
+            <div key={`${entry.name}-${entry.timestamp}-${idx}`} style={{ display: "flex", justifyContent: "space-between", fontSize: 14 }}>
+              <span style={{ color: "#e2e8f0" }}>{entry.name || "Anonymous"}</span>
+              <span style={{ color: "#f8fafc", fontWeight: 600 }}>{entry.score} cpm</span>
+            </div>
+          ))}
+        </div>
+      )}
     </section>
+  );
+}
+
+function NamePrompt({ inputRef, pendingScore, playerName, setPlayerName, onSubmit, onSkip }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 5 }}>
+      <div style={{ background: "#0f172a", borderRadius: 16, padding: 24, width: "min(90vw, 420px)", color: "#f8fafc", boxShadow: "0 20px 60px rgba(0,0,0,0.6)" }}>
+        <h2 style={{ marginBottom: 8, fontSize: 22, fontWeight: 600 }}>Great run!</h2>
+        <p style={{ marginBottom: 16, color: "#cbd5f5" }}>Average speed: <strong>{pendingScore ?? 0} cpm</strong></p>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            onSubmit(playerName);
+          }}
+        >
+          <label style={{ display: "block", fontSize: 12, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>
+            Enter your name
+          </label>
+          <input
+            ref={inputRef}
+            value={playerName}
+            onChange={(e) => setPlayerName(e.target.value)}
+            placeholder="Anonymous"
+            style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #334155", background: "#1e293b", color: "#f8fafc", marginBottom: 16 }}
+          />
+          <div style={{ display: "flex", gap: 12 }}>
+            <button type="submit" style={{ flex: 1, padding: 10, border: "none", borderRadius: 8, background: "#0ea5e9", color: "#fff", fontWeight: 600 }}>
+              Save score
+            </button>
+            <button type="button" onClick={onSkip} style={{ padding: 10, borderRadius: 8, border: "1px solid #64748b", background: "transparent", color: "#e2e8f0" }}>
+              Skip
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }
 
