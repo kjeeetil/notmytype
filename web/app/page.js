@@ -32,6 +32,23 @@ export default function Page() {
   const inputRef = useRef(null);
   const pendingMatchRef = useRef(true);
   const [socket, setSocket] = useState(null);
+  const fallbackTimerRef = useRef(null);
+
+  const startFallbackRace = useCallback(() => {
+    const fallback = pickFallbackPassage();
+    setPassage(fallback);
+    setLoadingPassage(false);
+    setAwaitingNext(false);
+    setCountdownMs(null);
+    setStartedAt(Date.now());
+    setPlayers([]);
+    setCursor(0);
+    setTyped("");
+    setEvents([]);
+    setPeakCpm(0);
+    setBestMinuteCpm(0);
+    completionRef.current = false;
+  }, []);
 
   useEffect(() => {
     const url = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:8081";
@@ -39,9 +56,7 @@ export default function Page() {
     setSocket(s);
 
     const useFallback = () => {
-      setPassage((prev) => prev || pickFallbackPassage());
-      setLoadingPassage(false);
-      setAwaitingNext(false);
+      startFallbackRace();
       pendingMatchRef.current = true;
     };
 
@@ -78,7 +93,7 @@ export default function Page() {
       if (!navigator.onLine) useFallback();
     });
     return () => { s.close(); };
-  }, []);
+  }, [startFallbackRace]);
 
   useEffect(() => {
     if (!socket) return;
@@ -101,14 +116,21 @@ export default function Page() {
   }, []);
 
   useEffect(() => {
+    if (fallbackTimerRef.current) {
+      clearTimeout(fallbackTimerRef.current);
+    }
     if (!loadingPassage || passage.length) return;
-    const timer = setTimeout(() => {
-      setPassage((prev) => prev || pickFallbackPassage());
-      setLoadingPassage(false);
-      setAwaitingNext(false);
+    fallbackTimerRef.current = setTimeout(() => {
+      startFallbackRace();
+      pendingMatchRef.current = true;
     }, 4000);
-    return () => clearTimeout(timer);
-  }, [loadingPassage, passage.length]);
+    return () => {
+      if (fallbackTimerRef.current) {
+        clearTimeout(fallbackTimerRef.current);
+        fallbackTimerRef.current = null;
+      }
+    };
+  }, [loadingPassage, passage.length, startFallbackRace]);
 
   const metrics = useMemo(() => computeMetrics(events, now), [events, now]);
   const decoratedPassage = useMemo(() => {
@@ -196,10 +218,7 @@ export default function Page() {
       setLoadingPassage(true);
       queueMatchRequest();
     } else {
-      const nextPassage = pickFallbackPassage();
-      setAwaitingNext(false);
-      setPassage(nextPassage);
-      setLoadingPassage(false);
+      startFallbackRace();
       queueMatchRequest();
     }
   }

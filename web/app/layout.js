@@ -1,4 +1,4 @@
-export const metadata = { title: 'Typing Race' };
+export const metadata = { title: 'Torfinns Touch-Trainer' };
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
