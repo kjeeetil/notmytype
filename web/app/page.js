@@ -15,138 +15,6 @@ const FALLBACK_PASSAGES = [
 ];
 const DEFAULT_SOCKET_URL = "http://localhost:8081";
 
-class BeatEngine {
-  constructor() {
-    this.ctx = null;
-    this.masterGain = null;
-    this.isPlaying = false;
-    this.timer = null;
-    this.step = 0;
-    this.speed = 0;
-  }
-
-  ensureContext() {
-    if (this.ctx) return;
-    const AudioContext = window.AudioContext || window.webkitAudioContext;
-    this.ctx = new AudioContext();
-    this.masterGain = this.ctx.createGain();
-    this.masterGain.gain.value = 0.4;
-    this.masterGain.connect(this.ctx.destination);
-  }
-
-  start() {
-    this.ensureContext();
-    this.ctx.resume();
-    this.isPlaying = true;
-    this.scheduleLoop();
-  }
-
-  stop() {
-    this.isPlaying = false;
-    if (this.timer) {
-      clearTimeout(this.timer);
-      this.timer = null;
-    }
-    if (this.ctx && this.ctx.state !== "closed") {
-      this.ctx.suspend();
-    }
-  }
-
-  setSpeed(multiplier) {
-    this.speed = Math.max(0, multiplier);
-    if (this.isPlaying) {
-      if (this.timer) {
-        clearTimeout(this.timer);
-        this.timer = null;
-      }
-      this.scheduleLoop();
-    }
-  }
-
-  scheduleLoop() {
-    if (!this.isPlaying) return;
-    const tempo = 90 + this.speed * 120;
-    const interval = (60 / tempo) * 1000 / 2; // eighth notes
-    this.timer = setTimeout(() => {
-      this.playStep();
-      this.scheduleLoop();
-    }, interval);
-  }
-
-  playStep() {
-    if (!this.ctx) return;
-    const step = this.step % 16;
-    if (step % 4 === 0) this.playKick();
-    if (step % 4 === 2) this.playSnare();
-    this.playHat(step);
-    if (this.speed > 1 && step % 8 === 4) this.playSynthStab();
-    this.step += 1;
-  }
-
-  playKick() {
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-    osc.type = "sine";
-    osc.frequency.setValueAtTime(150, this.ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(40, this.ctx.currentTime + 0.25);
-    gain.gain.setValueAtTime(0.6 + this.speed * 0.2, this.ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.25);
-    osc.connect(gain).connect(this.masterGain);
-    osc.start();
-    osc.stop(this.ctx.currentTime + 0.3);
-  }
-
-  playSnare() {
-    const bufferSize = this.ctx.sampleRate * 0.2;
-    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < bufferSize; i++) {
-      data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
-    }
-    const noise = this.ctx.createBufferSource();
-    noise.buffer = buffer;
-    const filter = this.ctx.createBiquadFilter();
-    filter.type = "highpass";
-    filter.frequency.value = 1200;
-    const gain = this.ctx.createGain();
-    gain.gain.value = 0.3 + this.speed * 0.1;
-    noise.connect(filter).connect(gain).connect(this.masterGain);
-    noise.start();
-    noise.stop(this.ctx.currentTime + 0.2);
-  }
-
-  playHat(step) {
-    const bufferSize = this.ctx.sampleRate * 0.05;
-    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < bufferSize; i++) {
-      data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
-    }
-    const noise = this.ctx.createBufferSource();
-    noise.buffer = buffer;
-    const gain = this.ctx.createGain();
-    const accent = step % 2 === 0 ? 0.25 : 0.15;
-    gain.gain.value = accent + this.speed * 0.05;
-    noise.connect(gain).connect(this.masterGain);
-    noise.start();
-    noise.stop(this.ctx.currentTime + 0.1);
-  }
-
-  playSynthStab() {
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-    osc.type = "sawtooth";
-    const baseFreq = 220 + this.speed * 60;
-    osc.frequency.setValueAtTime(baseFreq, this.ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(baseFreq * 2, this.ctx.currentTime + 0.3);
-    gain.gain.setValueAtTime(0.05, this.ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.4);
-    osc.connect(gain).connect(this.masterGain);
-    osc.start();
-    osc.stop(this.ctx.currentTime + 0.4);
-  }
-}
-
 function getSocketBaseUrl() {
   let runtimeValue;
   if (typeof window !== "undefined" && window.__ENV && window.__ENV.NEXT_PUBLIC_SOCKET_URL) {
@@ -290,7 +158,7 @@ export default function Page() {
       return;
     }
     if (!audioEngineRef.current) {
-      audioEngineRef.current = new BeatEngine();
+      audioEngineRef.current = createBeatEngine();
     }
     audioEngineRef.current.start();
     return () => {
@@ -762,6 +630,142 @@ function NamePrompt({ inputRef, pendingScore, playerName, setPlayerName, onSubmi
       </div>
     </div>
   );
+}
+
+function createBeatEngine() {
+  class BeatEngineImpl {
+    constructor() {
+      this.ctx = null;
+      this.masterGain = null;
+      this.isPlaying = false;
+      this.timer = null;
+      this.step = 0;
+      this.speed = 0;
+    }
+
+    ensureContext() {
+      if (this.ctx) return;
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      this.ctx = new AudioContext();
+      this.masterGain = this.ctx.createGain();
+      this.masterGain.gain.value = 0.4;
+      this.masterGain.connect(this.ctx.destination);
+    }
+
+    start() {
+      this.ensureContext();
+      this.ctx.resume();
+      this.isPlaying = true;
+      this.scheduleLoop();
+    }
+
+    stop() {
+      this.isPlaying = false;
+      if (this.timer) {
+        clearTimeout(this.timer);
+        this.timer = null;
+      }
+      if (this.ctx && this.ctx.state !== "closed") {
+        this.ctx.suspend();
+      }
+    }
+
+    setSpeed(multiplier) {
+      this.speed = Math.max(0, multiplier);
+      if (this.isPlaying) {
+        if (this.timer) {
+          clearTimeout(this.timer);
+          this.timer = null;
+        }
+        this.scheduleLoop();
+      }
+    }
+
+    scheduleLoop() {
+      if (!this.isPlaying) return;
+      const tempo = 90 + this.speed * 120;
+      const interval = (60 / tempo) * 1000 / 2; // eighth notes
+      this.timer = setTimeout(() => {
+        this.playStep();
+        this.scheduleLoop();
+      }, interval);
+    }
+
+    playStep() {
+      if (!this.ctx) return;
+      const step = this.step % 16;
+      if (step % 4 === 0) this.playKick();
+      if (step % 4 === 2) this.playSnare();
+      this.playHat(step);
+      if (this.speed > 1 && step % 8 === 4) this.playSynthStab();
+      this.step += 1;
+    }
+
+    playKick() {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(150, this.ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(40, this.ctx.currentTime + 0.25);
+      gain.gain.setValueAtTime(0.6 + this.speed * 0.2, this.ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.25);
+      osc.connect(gain).connect(this.masterGain);
+      osc.start();
+      osc.stop(this.ctx.currentTime + 0.3);
+    }
+
+    playSnare() {
+      const bufferSize = this.ctx.sampleRate * 0.2;
+      const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
+      }
+      const noise = this.ctx.createBufferSource();
+      noise.buffer = buffer;
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = "highpass";
+      filter.frequency.value = 1200;
+      const gain = this.ctx.createGain();
+      gain.gain.value = 0.3 + this.speed * 0.1;
+      noise.connect(filter).connect(gain).connect(this.masterGain);
+      noise.start();
+      noise.stop(this.ctx.currentTime + 0.2);
+    }
+
+    playHat(step) {
+      const bufferSize = this.ctx.sampleRate * 0.05;
+      const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
+      }
+      const noise = this.ctx.createBufferSource();
+      noise.buffer = buffer;
+      const gain = this.ctx.createGain();
+      const accent = step % 2 === 0 ? 0.25 : 0.15;
+      gain.gain.value = accent + this.speed * 0.05;
+      noise.connect(gain).connect(this.masterGain);
+      noise.start();
+      noise.stop(this.ctx.currentTime + 0.1);
+    }
+
+    playSynthStab() {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = "sawtooth";
+      const baseFreq = 220 + this.speed * 60;
+      osc.frequency.setValueAtTime(baseFreq, this.ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(baseFreq * 2, this.ctx.currentTime + 0.3);
+      gain.gain.setValueAtTime(0.05, this.ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.4);
+      osc.connect(gain).connect(this.masterGain);
+      osc.start();
+      osc.stop(this.ctx.currentTime + 0.4);
+    }
+  }
+
+  return new BeatEngineImpl();
 }
 
 function Starfield({ speed }) {
