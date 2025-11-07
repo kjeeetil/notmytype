@@ -13,7 +13,8 @@ export default function Page() {
   const [startedAt, setStartedAt] = useState(null);
   const [cursor, setCursor] = useState(0);
   const [typed, setTyped] = useState("");
-  const [passage, setPassage] = useState("Loading passage…");
+  const [passage, setPassage] = useState("");
+  const [loadingPassage, setLoadingPassage] = useState(true);
   const [awaitingNext, setAwaitingNext] = useState(false);
   const [events, setEvents] = useState([]);
   const [peakCpm, setPeakCpm] = useState(0);
@@ -34,13 +35,17 @@ export default function Page() {
       setCountdownMs(msg.countdownMs ?? null);
       if (msg.passage) {
         setPassage(msg.passage);
+        setLoadingPassage(false);
         completionRef.current = false;
         setAwaitingNext(false);
       }
     });
     s.on("race:start", (msg) => {
       setStartedAt(msg.startedAt);
-      if (msg.passage) setPassage(msg.passage);
+      if (msg.passage) {
+        setPassage(msg.passage);
+        setLoadingPassage(false);
+      }
       completionRef.current = false;
       setCursor(0);
       setTyped("");
@@ -97,6 +102,11 @@ export default function Page() {
   }
 
   function onChange(e) {
+    if (!passage.length) {
+      setTyped("");
+      setCursor(0);
+      return;
+    }
     const limit = passage.length || undefined;
     const value = typeof limit === "number" ? e.target.value.slice(0, limit) : e.target.value;
     setTyped(value);
@@ -125,7 +135,8 @@ export default function Page() {
     setCountdownMs(null);
     setPlayers([]);
     setAwaitingNext(true);
-    setPassage("Loading next passage…");
+    setPassage("");
+    setLoadingPassage(true);
     setEvents([]);
     setPeakCpm(0);
     setBestMinuteCpm(0);
@@ -136,23 +147,27 @@ export default function Page() {
     <main style={{ maxWidth: 720, margin: "40px auto", padding: 16 }}>
       <h1 style={{ fontSize: 28, fontWeight: 600, marginBottom: 12 }}>Typing Race</h1>
       <div style={{ border: "1px solid #ddd", borderRadius: 12, padding: 16 }}>
-        <p style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 18, lineHeight: 1.6 }}>
-          {decoratedPassage.map((token, i) => (
-            <span
-              key={i}
-              style={{
-                fontWeight: token.isCorrect ? 700 : 400,
-                color: token.isError ? "#dc2626" : token.isCorrect ? "#0f766e" : "#1f2937",
-                backgroundColor: token.isError ? "rgba(220,38,38,0.15)" : "transparent",
-                textDecoration: token.isCurrent ? "underline" : "none",
-                textDecorationThickness: token.isCurrent ? "3px" : undefined,
-                textDecorationColor: token.isCurrent ? "#0f172a" : undefined,
-                transition: "color 120ms ease, font-weight 120ms ease, background-color 120ms ease"
-              }}
-            >
-              {token.ch}
-            </span>
-          ))}
+        <p style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 18, lineHeight: 1.6, minHeight: 48 }}>
+          {loadingPassage ? (
+            <span style={{ color: "#9ca3af" }}>Loading passage...</span>
+          ) : (
+            decoratedPassage.map((token, i) => (
+              <span
+                key={i}
+                style={{
+                  fontWeight: token.isCorrect ? 700 : 400,
+                  color: token.isError ? "#dc2626" : token.isCorrect ? "#0f766e" : "#1f2937",
+                  backgroundColor: token.isError ? "rgba(220,38,38,0.15)" : "transparent",
+                  textDecoration: token.isCurrent ? "underline" : "none",
+                  textDecorationThickness: token.isCurrent ? "3px" : undefined,
+                  textDecorationColor: token.isCurrent ? "#0f172a" : undefined,
+                  transition: "color 120ms ease, font-weight 120ms ease, background-color 120ms ease"
+                }}
+              >
+                {token.ch}
+              </span>
+            ))
+          )}
         </p>
         <input
           ref={inputRef}
