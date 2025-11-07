@@ -32,34 +32,62 @@ const io = new Server(server, {
 // In-memory rooms (replace with Redis later)
 const rooms = new Map();
 
-function createRoom() {
+function pickPassage(exclude) {
+  const options = passages.filter((p) => p !== exclude);
+  const pool = options.length ? options : passages;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+function createRoom(lastPassage) {
   const id = Math.random().toString(36).slice(2, 8);
-  const passage = passages[Math.floor(Math.random() * passages.length)];
-  const state = { id, passage, passageHash: b64url(passage), players: new Map(), startedAt: undefined, countdownAt: undefined };
+  const passage = pickPassage(lastPassage);
+  const state = {
+    id,
+    passage,
+    passageHash: b64url(passage),
+    players: new Map(),
+    startedAt: undefined,
+    countdownAt: undefined
+  };
   rooms.set(id, state);
   return state;
+}
+
+function emitRoomState(room) {
+  io.to(room.id).emit("room:state", {
+    roomId: room.id,
+    players: [...room.players.values()],
+    countdownMs: room.countdownAt ? Math.max(0, room.countdownAt - Date.now()) : null,
+    passageLen: room.passage.length,
+    passage: room.passage
+  });
 }
 
 io.on("connection", (socket) => {
   let currentRoom = null;
   let totals = { correct: 0, total: 0 };
+  let lastPassage = null;
 
   socket.on("quick:match", () => {
+    if (currentRoom) {
+      const prev = currentRoom;
+      prev.players.delete(socket.id);
+      socket.leave(prev.id);
+      emitRoomState(prev);
+      if (prev.players.size === 0) rooms.delete(prev.id);
+    }
+    totals = { correct: 0, total: 0 };
+
     let room = [...rooms.values()].find(r => !r.startedAt && (r.players.size < 8));
-    if (!room) room = createRoom();
+    if (!room) room = createRoom(lastPassage);
     currentRoom = room;
+    lastPassage = room.passage;
 
     const p = { id: socket.id, handle: `Guest-${socket.id.slice(0,4)}`, progress: 0, wpm: 0, acc: 100 };
     room.players.set(socket.id, p);
     socket.join(room.id);
 
-    io.to(room.id).emit("room:state", {
-      roomId: room.id,
-      players: [...room.players.values()],
-      countdownMs: room.countdownAt ? Math.max(0, room.countdownAt - Date.now()) : null,
-      passageLen: room.passage.length,
-      passage: room.passage
-    });
+    emitRoomState(room);
 
     if (!room.countdownAt) {
       room.countdownAt = Date.now() + 5000;
@@ -102,13 +130,8 @@ io.on("connection", (socket) => {
   socket.on("disconnect", () => {
     if (currentRoom) {
       currentRoom.players.delete(socket.id);
-      io.to(currentRoom.id).emit("room:state", {
-        roomId: currentRoom.id,
-        players: [...currentRoom.players.values()],
-        countdownMs: currentRoom.countdownAt ? Math.max(0, currentRoom.countdownAt - Date.now()) : null,
-        passageLen: currentRoom.passage.length,
-        passage: currentRoom.passage
-      });
+      emitRoomState(currentRoom);
+      if (currentRoom.players.size === 0) rooms.delete(currentRoom.id);
     }
   });
 });

@@ -1,6 +1,11 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { io } from "socket.io-client";
+
+const WINDOW_FLOAT_MS = 10_000;
+const WINDOW_MINUTE_MS = 60_000;
+const MAX_HISTORY_MS = 5 * 60_000;
+const CHART_STEP_MS = 5_000;
 
 export default function Page() {
   const [players, setPlayers] = useState([]);
@@ -10,6 +15,10 @@ export default function Page() {
   const [typed, setTyped] = useState("");
   const [passage, setPassage] = useState("Loading passage…");
   const [awaitingNext, setAwaitingNext] = useState(false);
+  const [events, setEvents] = useState([]);
+  const [peakCpm, setPeakCpm] = useState(0);
+  const [bestMinuteCpm, setBestMinuteCpm] = useState(0);
+  const [now, setNow] = useState(Date.now());
   const completionRef = useRef(false);
 
   const inputRef = useRef(null);
@@ -22,7 +31,7 @@ export default function Page() {
     s.emit("quick:match");
     s.on("room:state", (msg) => {
       setPlayers(msg.players || []);
-      setCountdownMs(msg.countdownMs);
+      setCountdownMs(msg.countdownMs ?? null);
       if (msg.passage) {
         setPassage(msg.passage);
         completionRef.current = false;
@@ -36,12 +45,46 @@ export default function Page() {
       setCursor(0);
       setTyped("");
       setAwaitingNext(false);
+      setEvents([]);
+      setPeakCpm(0);
+      setBestMinuteCpm(0);
       inputRef.current?.focus();
     });
     s.on("race:progress", (msg) => {
       setPlayers(prev => prev.map(p => p.id === msg.userId ? { ...p, progress: msg.progressChars, wpm: msg.wpm, acc: msg.acc } : p));
     });
     return () => { s.close(); };
+  }, []);
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const metrics = useMemo(() => computeMetrics(events, now), [events, now]);
+  const decoratedPassage = useMemo(() => {
+    return passage.split("").map((ch, idx) => {
+      const typedChar = typed[idx];
+      const isCorrect = idx < cursor;
+      const isError = Boolean(typedChar && typedChar !== ch && idx >= cursor);
+      const isCurrent = !isError && idx === cursor;
+      return { ch, isCorrect, isError, isCurrent };
+    });
+  }, [passage, typed, cursor]);
+
+  useEffect(() => {
+    setPeakCpm((prev) => Math.max(prev, metrics.floatingCpm));
+    setBestMinuteCpm((prev) => Math.max(prev, metrics.minuteCpm));
+  }, [metrics.floatingCpm, metrics.minuteCpm]);
+
+  const registerProgress = useCallback((delta) => {
+    if (delta <= 0) return;
+    const time = Date.now();
+    setEvents((prev) => {
+      const next = [...prev, { time, count: delta }]
+        .filter((evt) => evt.time >= time - MAX_HISTORY_MS);
+      return next;
+    });
   }, []);
 
   function onKey(e) {
@@ -61,6 +104,8 @@ export default function Page() {
     while (correctCount < value.length && passage[correctCount] === value[correctCount]) {
       correctCount += 1;
     }
+    const delta = Math.max(0, correctCount - cursor);
+    if (delta > 0) registerProgress(delta);
     setCursor(correctCount);
     if (
       !completionRef.current &&
@@ -80,6 +125,10 @@ export default function Page() {
     setCountdownMs(null);
     setPlayers([]);
     setAwaitingNext(true);
+    setPassage("Loading next passage…");
+    setEvents([]);
+    setPeakCpm(0);
+    setBestMinuteCpm(0);
     socket?.emit("quick:match");
   }
 
@@ -88,19 +137,20 @@ export default function Page() {
       <h1 style={{ fontSize: 28, fontWeight: 600, marginBottom: 12 }}>Typing Race</h1>
       <div style={{ border: "1px solid #ddd", borderRadius: 12, padding: 16 }}>
         <p style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 18, lineHeight: 1.6 }}>
-          {passage.split("").map((ch, i) => (
+          {decoratedPassage.map((token, i) => (
             <span
               key={i}
               style={{
-                fontWeight: i < cursor ? 700 : 400,
-                color: i < cursor ? "#0f766e" : "#1f2937",
-                textDecoration: i === cursor ? "underline" : "none",
-                textDecorationThickness: i === cursor ? "3px" : undefined,
-                textDecorationColor: "#0f172a",
-                transition: "color 120ms ease, font-weight 120ms ease"
+                fontWeight: token.isCorrect ? 700 : 400,
+                color: token.isError ? "#dc2626" : token.isCorrect ? "#0f766e" : "#1f2937",
+                backgroundColor: token.isError ? "rgba(220,38,38,0.15)" : "transparent",
+                textDecoration: token.isCurrent ? "underline" : "none",
+                textDecorationThickness: token.isCurrent ? "3px" : undefined,
+                textDecorationColor: token.isCurrent ? "#0f172a" : undefined,
+                transition: "color 120ms ease, font-weight 120ms ease, background-color 120ms ease"
               }}
             >
-              {ch}
+              {token.ch}
             </span>
           ))}
         </p>
@@ -132,6 +182,13 @@ export default function Page() {
         />
       </div>
 
+      <StatsPanel
+        floating={metrics.floatingCpm}
+        peak={peakCpm}
+        bestMinute={bestMinuteCpm}
+        series={metrics.series}
+      />
+
       <div style={{ marginTop: 24 }}>
         {(players || []).map((p) => {
           const denominator = passage.length || 1;
@@ -154,5 +211,101 @@ export default function Page() {
         <div style={{ marginTop: 12, fontSize: 14 }}>Race starts in {Math.ceil(countdownMs/1000)}s</div>
       )}
     </main>
+  );
+}
+
+function computeMetrics(events, now) {
+  if (!events.length) {
+    return {
+      floatingCpm: 0,
+      minuteCpm: 0,
+      series: generateSeries([], now)
+    };
+  }
+  const floatingCpm = windowAverage(events, now, WINDOW_FLOAT_MS);
+  const minuteCpm = windowAverage(events, now, WINDOW_MINUTE_MS);
+  return {
+    floatingCpm,
+    minuteCpm,
+    series: generateSeries(events, now)
+  };
+}
+
+function windowAverage(events, endTime, windowMs) {
+  if (windowMs <= 0) return 0;
+  const start = endTime - windowMs;
+  let sum = 0;
+  for (const evt of events) {
+    if (evt.time > endTime) break;
+    if (evt.time >= start) {
+      sum += evt.count;
+    }
+  }
+  if (sum === 0) return 0;
+  return (sum / windowMs) * 60000;
+}
+
+function generateSeries(events, now) {
+  const points = [];
+  const steps = Math.floor(WINDOW_MINUTE_MS / CHART_STEP_MS);
+  for (let i = steps; i >= 0; i--) {
+    const t = now - i * CHART_STEP_MS;
+    points.push({
+      time: t,
+      value: windowAverage(events, t, WINDOW_FLOAT_MS)
+    });
+  }
+  return points;
+}
+
+function StatsPanel({ floating, peak, bestMinute, series }) {
+  const fmt = (value) => `${value.toFixed(0)} cpm`;
+  return (
+    <section style={{ marginTop: 24, padding: 16, border: "1px solid #e5e7eb", borderRadius: 12 }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
+        <Stat label="Floating avg (10s)" value={fmt(floating)} />
+        <Stat label="Peak avg (10s)" value={fmt(peak)} />
+        <Stat label="Best sustained (60s)" value={fmt(bestMinute)} />
+      </div>
+      <Chart series={series} />
+    </section>
+  );
+}
+
+function Stat({ label, value }) {
+  return (
+    <div style={{ flex: "1 1 160px" }}>
+      <div style={{ fontSize: 12, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</div>
+      <div style={{ fontSize: 22, fontWeight: 600 }}>{value}</div>
+    </div>
+  );
+}
+
+function Chart({ series }) {
+  if (!series.length) {
+    return <div style={{ marginTop: 16, color: "#9ca3af" }}>Start typing to see stats…</div>;
+  }
+  const width = 600;
+  const height = 140;
+  const maxValue = Math.max(120, ...series.map((p) => p.value));
+  const pts = series.map((point, idx) => {
+    const x = (idx / (series.length - 1 || 1)) * width;
+    const y = height - (point.value / maxValue) * height;
+    return `${x},${Number.isFinite(y) ? y : height}`;
+  }).join(" ");
+
+  return (
+    <svg
+      viewBox={`0 0 ${width} ${height}`}
+      preserveAspectRatio="none"
+      style={{ width: "100%", marginTop: 16, background: "#f8fafc", borderRadius: 12 }}
+    >
+      <polyline fill="none" stroke="#0f766e" strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" points={pts} />
+      <polygon
+        fill="rgba(14,116,144,0.15)"
+        stroke="none"
+        points={`${pts} ${width},${height} 0,${height}`}
+      />
+    </svg>
   );
 }
