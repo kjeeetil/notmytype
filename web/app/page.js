@@ -613,16 +613,44 @@ function Chart({ series }) {
 }
 
 function Scoreboard({ scores }) {
+  const prepared = (Array.isArray(scores) ? scores : [])
+    .map((entry, idx) => {
+      if (!entry || typeof entry !== "object") return null;
+      const rawScore =
+        typeof entry.score === "number"
+          ? entry.score
+          : typeof entry.score === "string"
+          ? Number(entry.score)
+          : typeof entry.cpm === "number"
+          ? entry.cpm
+          : typeof entry.wpm === "number"
+          ? entry.wpm
+          : typeof entry.value === "number"
+          ? entry.value
+          : NaN;
+      if (!Number.isFinite(rawScore) || rawScore <= 0) {
+        return null;
+      }
+      return {
+        name: typeof entry.name === "string" && entry.name.trim() ? entry.name.trim() : "Anonymous",
+        score: Math.round(rawScore),
+        timestamp: typeof entry.timestamp === "number" ? entry.timestamp : idx,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 10);
+
   return (
     <section style={{ marginTop: 24, padding: 16, border: "1px solid rgba(255,255,255,0.2)", borderRadius: 12, background: "rgba(3,7,18,0.7)" }}>
       <h2 style={{ marginBottom: 12, fontSize: 18, fontWeight: 600 }}>Recent Runs</h2>
-      {scores.length === 0 ? (
+      {prepared.length === 0 ? (
         <div style={{ color: "#94a3b8" }}>Complete three passages to record your first score.</div>
       ) : (
         <div style={{ display: "grid", rowGap: 8 }}>
-          {scores.slice(0, 10).map((entry, idx) => (
+          {prepared.map((entry, idx) => (
             <div key={`${entry.name}-${entry.timestamp}-${idx}`} style={{ display: "flex", justifyContent: "space-between", fontSize: 14 }}>
-              <span style={{ color: "#e2e8f0" }}>{entry.name || "Anonymous"}</span>
+              <span style={{ color: "#e2e8f0" }}>{entry.name}</span>
               <span style={{ color: "#f8fafc", fontWeight: 600 }}>{entry.score} cpm</span>
             </div>
           ))}
