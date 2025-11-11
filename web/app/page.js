@@ -4,6 +4,7 @@ import { io } from "socket.io-client";
 
 const WINDOW_FLOAT_MS = 10_000;
 const WINDOW_MINUTE_MS = 60_000;
+const WINDOW_RESPONSIVE_MS = 5_000;
 const MAX_HISTORY_MS = 5 * 60_000;
 const CHART_STEP_MS = 5_000;
 const FALLBACK_PASSAGES = [
@@ -227,7 +228,7 @@ export default function Page() {
   const metrics = useMemo(() => computeMetrics(events, now), [events, now]);
   const [lastMetrics, setLastMetrics] = useState(() => metrics);
   useEffect(() => {
-    const hasSignal = metrics.floatingCpm > 0 || metrics.minuteCpm > 0 || metrics.series.some(p => p.value > 0);
+    const hasSignal = metrics.floatingCpm > 0 || metrics.minuteCpm > 0 || metrics.responsiveCpm > 0 || metrics.series.some(p => p.value > 0);
     if (!loadingPassage && !awaitingNext) {
       setLastMetrics(metrics);
     } else if (hasSignal) {
@@ -239,9 +240,9 @@ export default function Page() {
   useEffect(() => {
     const engine = audioEngineRef.current;
     if (engine) {
-      engine.setSpeed(Math.min(1.5, (effectiveMetrics.minuteCpm || 0) / 300));
+      engine.setSpeed(Math.min(1.5, (effectiveMetrics.responsiveCpm || 0) / 300));
     }
-  }, [effectiveMetrics.minuteCpm]);
+  }, [effectiveMetrics.responsiveCpm]);
   const decoratedPassage = useMemo(() => {
     return passage.split("").map((ch, idx) => {
       const typedChar = typed[idx];
@@ -375,7 +376,7 @@ export default function Page() {
 
   return (
     <div style={{ position: "relative", minHeight: "100vh", overflow: "hidden", background: "#000" }}>
-      <Starfield speed={effectiveMetrics.minuteCpm} />
+      <Starfield speed={effectiveMetrics.responsiveCpm} />
       <main style={{ position: "relative", zIndex: 1, maxWidth: 720, margin: "40px auto", padding: 16, color: "#f8fafc" }}>
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, marginBottom: 12 }}>
         <h1 style={{ fontSize: 28, fontWeight: 600, margin: 0 }}>Torfinns Touch-Trainer</h1>
@@ -519,9 +520,11 @@ function computeMetrics(events, now) {
   }, []);
   const floatingCpm = windowAverage(aligned, now, WINDOW_FLOAT_MS);
   const minuteCpm = windowAverage(aligned, now, WINDOW_MINUTE_MS);
+  const responsiveCpm = windowAverage(aligned, now, WINDOW_RESPONSIVE_MS);
   return {
     floatingCpm,
     minuteCpm,
+    responsiveCpm,
     series: generateSeries(aligned, now)
   };
 }
