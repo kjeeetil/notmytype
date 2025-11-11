@@ -845,6 +845,7 @@ function createBeatEngine() {
       if (step % 4 === 0) this.playKick();
       if (step % 4 === 2) this.playSnare();
       this.playHat(step);
+      this.playMelody(step);
       if (this.speed > 1 && step % 8 === 4) this.playSynthStab();
       this.step += 1;
     }
@@ -896,6 +897,90 @@ function createBeatEngine() {
       noise.connect(gain).connect(this.masterGain);
       noise.start();
       noise.stop(this.ctx.currentTime + 0.1);
+    }
+
+    playMelody(step) {
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+      const intensity = Math.min(1, Math.max(0, this.speed / 1.2));
+      const baseFreq = 140 + this.speed * 70;
+
+      if (step % 16 === 0) {
+        this.playPadChord(now, baseFreq, intensity);
+      }
+
+      if (this.speed > 0.3 && step % 2 === 0) {
+        this.playArpeggioNote(now, baseFreq, intensity, step);
+      }
+    }
+
+    playPadChord(startTime, baseFreq, intensity) {
+      const envelope = this.ctx.createGain();
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = "lowpass";
+      filter.frequency.setValueAtTime(800 + intensity * 1600, startTime);
+      filter.Q.value = 0.6 + intensity * 1.4;
+      filter.connect(envelope);
+      envelope.connect(this.masterGain);
+
+      const attack = Math.max(0.08, 0.32 - intensity * 0.18);
+      const sustainLevel = 0.12 + intensity * 0.22;
+      const release = Math.max(0.7, 2.4 - intensity * 1.2);
+
+      envelope.gain.setValueAtTime(0.0001, startTime);
+      envelope.gain.linearRampToValueAtTime(sustainLevel, startTime + attack);
+      envelope.gain.exponentialRampToValueAtTime(0.0001, startTime + release);
+
+      const chordIntervals = [0, 7, 12];
+      chordIntervals.forEach((interval, idx) => {
+        const osc = this.ctx.createOscillator();
+        osc.type = intensity > 0.75 ? "sawtooth" : "triangle";
+        const detune = idx === 0 ? -8 : idx === 2 ? 6 : 0;
+        osc.detune.setValueAtTime(detune + intensity * (idx - 1) * 4, startTime);
+        const freq = baseFreq * Math.pow(2, interval / 12);
+        osc.frequency.setValueAtTime(freq, startTime);
+        osc.connect(filter);
+        osc.start(startTime);
+        osc.stop(startTime + release + 0.4);
+      });
+    }
+
+    playArpeggioNote(startTime, baseFreq, intensity, step) {
+      const pattern = [0, 4, 7, 11, 14, 11, 7, 4];
+      const index = Math.floor(step / 2) % pattern.length;
+      const interval = pattern[index];
+      const freq = baseFreq * Math.pow(2, interval / 12);
+
+      const osc = this.ctx.createOscillator();
+      osc.type = intensity > 0.85 ? "sawtooth" : intensity > 0.55 ? "square" : "triangle";
+      osc.frequency.setValueAtTime(freq, startTime);
+
+      const vibrato = this.ctx.createOscillator();
+      vibrato.frequency.setValueAtTime(4 + intensity * 8, startTime);
+      const vibratoGain = this.ctx.createGain();
+      vibratoGain.gain.setValueAtTime(6 + intensity * 28, startTime);
+      vibrato.connect(vibratoGain).connect(osc.frequency);
+
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = "bandpass";
+      filter.frequency.setValueAtTime(freq * (1 + intensity * 0.8), startTime);
+      filter.Q.value = 3 + intensity * 6;
+
+      const gain = this.ctx.createGain();
+      const attack = Math.max(0.015, 0.05 - intensity * 0.02);
+      const peakLevel = 0.07 + intensity * 0.14;
+      const decay = Math.max(0.18, 0.36 - intensity * 0.16);
+      gain.gain.setValueAtTime(0.0001, startTime);
+      gain.gain.linearRampToValueAtTime(peakLevel, startTime + attack);
+      gain.gain.exponentialRampToValueAtTime(0.0001, startTime + decay);
+
+      osc.connect(filter).connect(gain).connect(this.masterGain);
+      osc.start(startTime);
+      vibrato.start(startTime);
+
+      const stopTime = startTime + Math.max(decay, 0.22);
+      osc.stop(stopTime);
+      vibrato.stop(stopTime);
     }
 
     playSynthStab() {
