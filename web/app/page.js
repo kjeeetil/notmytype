@@ -161,13 +161,6 @@ export default function Page() {
       audioEngineRef.current?.stop();
     }
   }, [audioEnabled]);
-  useEffect(() => {
-    const engine = audioEngineRef.current;
-    if (engine) {
-      engine.setSpeed(Math.min(1.5, (effectiveMetrics.minuteCpm || 0) / 300));
-    }
-  }, [effectiveMetrics.minuteCpm]);
-
   const handleToggleAudio = useCallback(async () => {
     if (audioEnabled) {
       setAudioEnabled(false);
@@ -242,6 +235,13 @@ export default function Page() {
     }
   }, [metrics, loadingPassage, awaitingNext]);
   const effectiveMetrics = (!awaitingNext && !loadingPassage) ? metrics : lastMetrics;
+
+  useEffect(() => {
+    const engine = audioEngineRef.current;
+    if (engine) {
+      engine.setSpeed(Math.min(1.5, (effectiveMetrics.minuteCpm || 0) / 300));
+    }
+  }, [effectiveMetrics.minuteCpm]);
   const decoratedPassage = useMemo(() => {
     return passage.split("").map((ch, idx) => {
       const typedChar = typed[idx];
