@@ -13,7 +13,7 @@ const FALLBACK_PASSAGES = [
   "The company blends Pan-African and Scandinavian values where sustainability, localisation, empowerment and giving back are a way of doing business.",
   "Our operating model is integrated, flexible and efficient with a commitment to empower communities beyond local content obligations."
 ];
-const DEFAULT_SOCKET_URL = "http://localhost:8081";
+const DEFAULT_SOCKET_URL = "http://localhost:8080";
 
 function getSocketBaseUrl() {
   let runtimeValue;
