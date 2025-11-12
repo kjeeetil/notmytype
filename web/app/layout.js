@@ -12,8 +12,10 @@ export default function RootLayout({ children }) {
 }
 
 function RuntimeEnvScript() {
+  // Read at runtime so Cloud Run env vars injected at deploy time are respected
+  const nextPublicSocket = process.env["NEXT_PUBLIC_SOCKET_URL"] || process.env["SOCKET_URL"] || "";
   const runtimeEnv = {
-    NEXT_PUBLIC_SOCKET_URL: process.env.NEXT_PUBLIC_SOCKET_URL || ""
+    NEXT_PUBLIC_SOCKET_URL: nextPublicSocket
   };
   const envJson = JSON.stringify(runtimeEnv).replace(/</g, "\\u003c");
   return (
