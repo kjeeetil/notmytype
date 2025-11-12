@@ -3,19 +3,19 @@
 FROM node:20-alpine AS server-deps
 WORKDIR /srv
 COPY server/package*.json ./
-# Use npm cache between builds for faster installs
-RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev
+# Install production dependencies for the server
+RUN npm ci --omit=dev
 COPY server ./
 
 FROM node:20-alpine AS web-builder
 WORKDIR /web
 COPY web/package*.json ./
-# Install all deps to build Next.js
-RUN --mount=type=cache,target=/root/.npm npm ci
+# Install all dependencies to build Next.js
+RUN npm ci
 COPY web ./
-# Speed up Next.js build and cache its compiled artifacts between builds
+# Disable telemetry and build the Next.js app
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN --mount=type=cache,target=/web/.next/cache npm run build
+RUN npm run build
 
 FROM node:20-alpine
 WORKDIR /app
