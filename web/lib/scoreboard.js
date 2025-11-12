@@ -8,7 +8,19 @@ function createScoreboard({ maxEntries = MAX_RECENT_SCORES } = {}) {
       return [...entries];
     },
     record(entry) {
-      entries.push(entry);
+      const copy = { ...entry };
+      const existingIndex = entries.findIndex(
+        (item) => item?.name === copy.name
+      );
+
+      if (existingIndex >= 0) {
+        if (entries[existingIndex].score >= copy.score) {
+          return this.list();
+        }
+        entries[existingIndex] = copy;
+      } else {
+        entries.push(copy);
+      }
       entries.sort((a, b) => {
         if (b.score !== a.score) return b.score - a.score;
         const aTime = typeof a.timestamp === "number" ? a.timestamp : 0;
