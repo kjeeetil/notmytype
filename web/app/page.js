@@ -43,6 +43,10 @@ export default function Page() {
   const audioEngineRef = useRef(null);
   const mountedRef = useRef(true);
   const [sessionStats, setSessionStats] = useState({ chars: 0, startMs: null });
+  const blockClipboardInteraction = useCallback((event) => {
+    event.preventDefault();
+    return false;
+  }, []);
 
   const startFallbackRace = useCallback(() => {
     const fallback = pickFallbackPassage();
@@ -346,6 +350,9 @@ export default function Page() {
         <input
           ref={inputRef}
           onChange={onChange}
+          onPaste={blockClipboardInteraction}
+          onCopy={blockClipboardInteraction}
+          onCut={blockClipboardInteraction}
           value={typed}
           placeholder={
             awaitingNext
