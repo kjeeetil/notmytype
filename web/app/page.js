@@ -362,7 +362,7 @@ export default function Page() {
       <Starfield speed={effectiveMetrics.responsiveCpm} />
       <main style={{ position: "relative", zIndex: 1, maxWidth: 720, margin: "40px auto", padding: 16, color: "#f8fafc" }}>
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, marginBottom: 12 }}>
-        <h1 style={{ fontSize: 28, fontWeight: 600, margin: 0 }}>Torfinns Touch-Trainer</h1>
+        <h1 style={{ fontSize: 28, fontWeight: 600, margin: 0 }}>Pecan Brand Alignment Test</h1>
         <button
           onClick={handleToggleAudio}
           disabled={audioInitPending && !audioEnabled}
@@ -378,7 +378,7 @@ export default function Page() {
             opacity: audioInitPending && !audioEnabled ? 0.65 : 1
           }}
         >
-          {audioEnabled ? "Mute Synth" : audioInitPending ? "Starting…" : "Play Synth"}
+          {audioEnabled ? "Music Off" : audioInitPending ? "Starting…" : "Music On"}
         </button>
       </div>
       <div style={{ border: "1px solid rgba(255,255,255,0.2)", borderRadius: 12, padding: 16, background: "rgba(0,0,0,0.5)" }}>

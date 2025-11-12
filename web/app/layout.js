@@ -1,4 +1,4 @@
-export const metadata = { title: 'Torfinns Touch-Trainer' };
+export const metadata = { title: 'Pecan Brand Alignment Test' };
 export const dynamic = 'force-dynamic';
 
 export default function RootLayout({ children }) {
