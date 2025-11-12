@@ -18,10 +18,10 @@ const CONTACT_MELODY_NOTES = Array.isArray(CONTACT_NOTES) ? CONTACT_NOTES : [];
 const CONTACT_MELODY_DURATION = typeof CONTACT_LOOP_DURATION === "number" && CONTACT_LOOP_DURATION > 0
   ? CONTACT_LOOP_DURATION
   : (CONTACT_MELODY_NOTES.length ? CONTACT_MELODY_NOTES[CONTACT_MELODY_NOTES.length - 1].start : 8);
-const CONTACT_SPEED_MIN = 0.55;
+const CONTACT_SPEED_MIN = 0.275;
 const CONTACT_SPEED_MAX = 1.4;
 const AUDIO_TICK_INTERVAL_MS = 30;
-const AUDIO_SMOOTHING_RATE = 3; // how quickly playback catches up to target tempo
+const SPEED_ADJUST_TAU = 6; // seconds needed for gradual acceleration/deceleration
 const CONTACT_INSTRUMENTS = {
   0: { waveform: "sawtooth", gain: 0.38, attack: 0.03, release: 0.5, filter: { type: "lowpass", frequency: 520, q: 0.8 } },
   1: { waveform: "triangle", gain: 0.28, attack: 0.018, release: 0.38, filter: { type: "lowpass", frequency: 1200, q: 1.1 } },
@@ -30,6 +30,7 @@ const CONTACT_INSTRUMENTS = {
 const DEFAULT_CONTACT_INSTRUMENT = { waveform: "triangle", gain: 0.26, attack: 0.015, release: 0.32 };
 
 export default function Page() {
+  const cpmHistoryRef = useRef([]);
   const [startedAt, setStartedAt] = useState(null);
   const [cursor, setCursor] = useState(0);
   const [typed, setTyped] = useState("");
@@ -185,11 +186,20 @@ export default function Page() {
 
   useEffect(() => {
     const engine = audioEngineRef.current;
+    const responsiveCpm = Math.max(0, effectiveMetrics.responsiveCpm || 0);
+    const now = Date.now();
+    const windowMs = 15000;
+    const history = cpmHistoryRef.current;
+    history.push({ time: now, value: responsiveCpm });
+    while (history.length && now - history[0].time > windowMs) {
+      history.shift();
+    }
+    const averageCpm = history.length ? history.reduce((sum, entry) => sum + entry.value, 0) / history.length : 0;
+    const normalized = Math.min(1, averageCpm / 320);
+    const range = CONTACT_SPEED_MAX - CONTACT_SPEED_MIN;
+    const targetSpeed = CONTACT_SPEED_MIN + normalized * range;
     if (engine) {
-      const responsiveCpm = Math.max(0, effectiveMetrics.responsiveCpm || 0);
-      const normalized = Math.min(1, responsiveCpm / 320);
-      const playbackRate = 0.55 + normalized * 0.85; // slower base, ramp with CPM
-      engine.setSpeed(playbackRate);
+      engine.setSpeed(targetSpeed);
     }
   }, [effectiveMetrics.responsiveCpm]);
   const decoratedPassage = useMemo(() => {
@@ -836,8 +846,9 @@ function createBeatEngine() {
     }
 
     updateCurrentSpeed(deltaSeconds) {
-      const smoothing = Math.min(1, Math.max(0.02, deltaSeconds * AUDIO_SMOOTHING_RATE));
-      this.currentSpeed += (this.targetSpeed - this.currentSpeed) * smoothing;
+      const tau = SPEED_ADJUST_TAU;
+      const alpha = 1 - Math.exp(-Math.max(0, deltaSeconds) / (tau || 1));
+      this.currentSpeed += (this.targetSpeed - this.currentSpeed) * alpha;
       this.currentSpeed = this.clampSpeed(this.currentSpeed);
     }
 
