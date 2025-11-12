@@ -80,7 +80,8 @@ export default function Page() {
   }, [awaitingNext]);
   useEffect(() => {
     const url = getSocketBaseUrl();
-    const s = io(url, { transports: ["websocket"], reconnection: true });
+    // Enable polling fallback in addition to websockets for constrained networks
+    const s = io(url, { transports: ["websocket", "polling"], reconnection: true });
     setSocket(s);
 
     const handleConnectionIssue = () => {
@@ -122,13 +123,39 @@ export default function Page() {
     s.on("race:progress", (msg) => {
       setPlayers(prev => prev.map(p => p.id === msg.userId ? { ...p, progress: msg.progressChars, wpm: msg.wpm, acc: msg.acc } : p));
     });
+    function buildErrorMessage(baseMessage, err) {
+      try {
+        const hints = [];
+        const loc = typeof window !== "undefined" ? window.location : null;
+        const isOnline = typeof navigator !== "undefined" ? navigator.onLine : true;
+        const msg = err?.message || String(err || "");
+        const reason = [baseMessage, msg].filter(Boolean).join(": ");
+        const isHttps = loc && loc.protocol === "https:";
+        const isLocalhost = /^(https?:\/\/)?(localhost|127\.0\.0\.1)(:|\b)/i.test(url);
+        if (!isOnline) hints.push("You appear to be offline.");
+        if (isHttps && !isLocalhost && /^http:\/\//i.test(url)) {
+          hints.push("Mixed content: app is HTTPS but socket URL is HTTP.");
+        }
+        if (loc && loc.hostname && !url.includes(loc.hostname) && !isLocalhost) {
+          hints.push("Host mismatch: socket host differs from app host.");
+        }
+        hints.push("Proxy/load balancer must allow WebSocket upgrades on /socket.io.");
+        hints.push("Polling fallback enabled; some networks still block long polling.");
+        return { reason, hints };
+      } catch (_) {
+        return { reason: baseMessage, hints: [] };
+      }
+    }
+
     s.on("connect_error", (err) => {
-      setConnectionError(err?.message || `Unable to reach server at ${url}`);
+      const details = buildErrorMessage(`Unable to reach server at ${url}`, err);
+      setConnectionError(details);
       handleConnectionIssue();
     });
     s.on("disconnect", (reason) => {
-      setConnectionError(reason || `Disconnected from server at ${url}`);
-      if (!navigator.onLine) handleConnectionIssue(); else handleConnectionIssue();
+      const details = buildErrorMessage(`Disconnected from server at ${url}`, reason);
+      setConnectionError(details);
+      handleConnectionIssue();
     });
     return () => { s.close(); };
   }, [startFallbackRace]);
@@ -414,7 +441,18 @@ export default function Page() {
             boxShadow: "0 4px 10px rgba(0,0,0,0.4)"
           }}
         >
-          <span style={{ fontSize: 13 }}>Realtime server unreachable: {String(connectionError)}</span>
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            <span style={{ fontSize: 13, marginBottom: 4 }}>
+              Realtime connection problem: {String(connectionError?.reason || connectionError)}
+            </span>
+            {Array.isArray(connectionError?.hints) && connectionError.hints.length > 0 && (
+              <ul style={{ margin: 0, paddingInlineStart: 16, fontSize: 12, color: "#fff" }}>
+                {connectionError.hints.slice(0, 3).map((h, i) => (
+                  <li key={i} style={{ opacity: 0.9 }}>{h}</li>
+                ))}
+              </ul>
+            )}
+          </div>
           <button
             onClick={retryConnection}
             style={{
