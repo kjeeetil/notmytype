@@ -607,12 +607,12 @@ function Scoreboard({ scores, error }) {
 
   return (
     <section style={{ marginTop: 24, padding: 16, border: "1px solid rgba(255,255,255,0.2)", borderRadius: 12, background: "rgba(3,7,18,0.7)" }}>
-      <h2 style={{ marginBottom: 12, fontSize: 18, fontWeight: 600 }}>Recent Runs</h2>
+      <h2 style={{ marginBottom: 12, fontSize: 18, fontWeight: 600 }}>High Scores</h2>
       {error && (
         <div style={{ color: "#fca5a5", marginBottom: 8, fontSize: 13 }}>{error}</div>
       )}
       {prepared.length === 0 ? (
-        <div style={{ color: "#94a3b8" }}>Complete three passages to record your first score.</div>
+        <div style={{ color: "#94a3b8" }}>Complete three passages to record your score.</div>
       ) : (
         <div style={{ display: "grid", rowGap: 8 }}>
           {prepared.map((entry, idx) => (
