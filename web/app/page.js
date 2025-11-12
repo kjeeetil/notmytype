@@ -18,8 +18,13 @@ const DEFAULT_SOCKET_URL = "http://localhost:8080";
 
 function getSocketBaseUrl() {
   let runtimeValue;
-  if (typeof window !== "undefined" && window.__ENV && window.__ENV.NEXT_PUBLIC_SOCKET_URL) {
-    runtimeValue = window.__ENV.NEXT_PUBLIC_SOCKET_URL;
+  if (typeof window !== "undefined") {
+    if (window.__ENV && window.__ENV.NEXT_PUBLIC_SOCKET_URL) {
+      runtimeValue = window.__ENV.NEXT_PUBLIC_SOCKET_URL;
+    } else if (window.location && window.location.origin) {
+      // Prefer current page origin when not explicitly configured
+      runtimeValue = window.location.origin;
+    }
   }
   const candidate = runtimeValue || process.env.NEXT_PUBLIC_SOCKET_URL || DEFAULT_SOCKET_URL;
   return candidate.replace(/\/$/, "");
