@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CONTACT_NOTES, CONTACT_LOOP_DURATION } from "../lib/contact-melody";
 
 const WINDOW_FLOAT_MS = 10_000;
 const WINDOW_MINUTE_MS = 60_000;
@@ -13,6 +14,10 @@ const FALLBACK_PASSAGES = [
   "The company blends Pan-African and Scandinavian values where sustainability, localisation, empowerment and giving back are a way of doing business.",
   "Our operating model is integrated, flexible and efficient with a commitment to empower communities beyond local content obligations."
 ];
+const CONTACT_MELODY_NOTES = Array.isArray(CONTACT_NOTES) ? CONTACT_NOTES : [];
+const CONTACT_MELODY_DURATION = typeof CONTACT_LOOP_DURATION === "number" && CONTACT_LOOP_DURATION > 0
+  ? CONTACT_LOOP_DURATION
+  : (CONTACT_MELODY_NOTES.length ? CONTACT_MELODY_NOTES[CONTACT_MELODY_NOTES.length - 1].start : 8);
 
 export default function Page() {
   const [startedAt, setStartedAt] = useState(null);
@@ -684,6 +689,16 @@ function createBeatEngine() {
       this.shouldPlay = false;
       this.unsupported = false;
       this.supported = true;
+      this.contactNotes = CONTACT_MELODY_NOTES;
+      this.contactLoopDuration = CONTACT_MELODY_DURATION || 8;
+      this.contactLoopAnchor = 0;
+      this.contactNoteIndex = 0;
+      this.contactTempoFactor = 1;
+    }
+
+    resetContactLoop(anchorTime = 0) {
+      this.contactLoopAnchor = anchorTime;
+      this.contactNoteIndex = 0;
     }
 
     async ensureContext() {
@@ -753,6 +768,7 @@ function createBeatEngine() {
         }
         this.isPlaying = true;
         this.step = 0;
+        this.resetContactLoop(this.ctx?.currentTime || 0);
         this.scheduleLoop();
       }).finally(() => {
         this.startPromise = null;
@@ -763,6 +779,7 @@ function createBeatEngine() {
     stop() {
       this.shouldPlay = false;
       this.isPlaying = false;
+      this.resetContactLoop();
       if (this.timer) {
         clearTimeout(this.timer);
         this.timer = null;
@@ -774,6 +791,7 @@ function createBeatEngine() {
 
     setSpeed(multiplier) {
       this.speed = Math.max(0, multiplier);
+      this.contactTempoFactor = 1 + this.speed * 0.5;
       if (this.isPlaying) {
         if (this.timer) {
           clearTimeout(this.timer);
@@ -795,11 +813,11 @@ function createBeatEngine() {
 
     playStep() {
       if (!this.ctx) return;
+      this.scheduleContactMelody();
       const step = this.step % 16;
       if (step % 4 === 0) this.playKick();
       if (step % 4 === 2) this.playSnare();
       this.playHat(step);
-      this.playMelody(step);
       if (this.speed > 1 && step % 8 === 4) this.playSynthStab();
       this.step += 1;
     }
@@ -853,88 +871,58 @@ function createBeatEngine() {
       noise.stop(this.ctx.currentTime + 0.1);
     }
 
-    playMelody(step) {
-      if (!this.ctx) return;
+    scheduleContactMelody() {
+      if (!this.ctx || !this.contactNotes.length || !this.isPlaying) return;
+      if (!this.contactLoopAnchor) {
+        this.resetContactLoop(this.ctx.currentTime);
+      }
       const now = this.ctx.currentTime;
-      const intensity = Math.min(1, Math.max(0, this.speed / 1.2));
-      const baseFreq = 140 + this.speed * 70;
-
-      if (step % 16 === 0) {
-        this.playPadChord(now, baseFreq, intensity);
+      const tempoFactor = this.contactTempoFactor || 1;
+      const loopDuration = this.contactLoopDuration / tempoFactor;
+      while (now - this.contactLoopAnchor >= loopDuration) {
+        this.contactLoopAnchor += loopDuration;
+        this.contactNoteIndex = 0;
       }
-
-      if (this.speed > 0.3 && step % 2 === 0) {
-        this.playArpeggioNote(now, baseFreq, intensity, step);
+      const lookahead = 0.4;
+      let guard = 0;
+      while (guard < this.contactNotes.length) {
+        const note = this.contactNotes[this.contactNoteIndex];
+        if (!note) break;
+        const scheduledStart = this.contactLoopAnchor + note.start / tempoFactor;
+        if (scheduledStart > now + lookahead) {
+          break;
+        }
+        const scaledDuration = Math.max(0.05, note.duration / tempoFactor);
+        this.triggerContactNote(note, scheduledStart, scaledDuration);
+        this.contactNoteIndex += 1;
+        if (this.contactNoteIndex >= this.contactNotes.length) {
+          this.contactNoteIndex = 0;
+          this.contactLoopAnchor += loopDuration;
+        }
+        guard += 1;
       }
     }
 
-    playPadChord(startTime, baseFreq, intensity) {
-      const envelope = this.ctx.createGain();
-      const filter = this.ctx.createBiquadFilter();
-      filter.type = "lowpass";
-      filter.frequency.setValueAtTime(800 + intensity * 1600, startTime);
-      filter.Q.value = 0.6 + intensity * 1.4;
-      filter.connect(envelope);
-      envelope.connect(this.masterGain);
-
-      const attack = Math.max(0.08, 0.32 - intensity * 0.18);
-      const sustainLevel = 0.12 + intensity * 0.22;
-      const release = Math.max(0.7, 2.4 - intensity * 1.2);
-
-      envelope.gain.setValueAtTime(0.0001, startTime);
-      envelope.gain.linearRampToValueAtTime(sustainLevel, startTime + attack);
-      envelope.gain.exponentialRampToValueAtTime(0.0001, startTime + release);
-
-      const chordIntervals = [0, 7, 12];
-      chordIntervals.forEach((interval, idx) => {
-        const osc = this.ctx.createOscillator();
-        osc.type = intensity > 0.75 ? "sawtooth" : "triangle";
-        const detune = idx === 0 ? -8 : idx === 2 ? 6 : 0;
-        osc.detune.setValueAtTime(detune + intensity * (idx - 1) * 4, startTime);
-        const freq = baseFreq * Math.pow(2, interval / 12);
-        osc.frequency.setValueAtTime(freq, startTime);
-        osc.connect(filter);
-        osc.start(startTime);
-        osc.stop(startTime + release + 0.4);
-      });
-    }
-
-    playArpeggioNote(startTime, baseFreq, intensity, step) {
-      const pattern = [0, 4, 7, 11, 14, 11, 7, 4];
-      const index = Math.floor(step / 2) % pattern.length;
-      const interval = pattern[index];
-      const freq = baseFreq * Math.pow(2, interval / 12);
-
+    triggerContactNote(note, startTime, duration) {
+      if (!this.ctx || !this.masterGain) return;
       const osc = this.ctx.createOscillator();
-      osc.type = intensity > 0.85 ? "sawtooth" : intensity > 0.55 ? "square" : "triangle";
+      const gain = this.ctx.createGain();
+      const waveform = note.channel === 0 ? "sawtooth" : note.channel === 2 ? "square" : "triangle";
+      osc.type = waveform;
+      const freq = midiToFrequency(note.note);
       osc.frequency.setValueAtTime(freq, startTime);
 
-      const vibrato = this.ctx.createOscillator();
-      vibrato.frequency.setValueAtTime(4 + intensity * 8, startTime);
-      const vibratoGain = this.ctx.createGain();
-      vibratoGain.gain.setValueAtTime(6 + intensity * 28, startTime);
-      vibrato.connect(vibratoGain).connect(osc.frequency);
+      const velocity = Math.min(1, Math.max(0.15, note.velocity / 127));
+      const attack = 0.01;
+      const decay = Math.max(0.12, duration * 0.8);
 
-      const filter = this.ctx.createBiquadFilter();
-      filter.type = "bandpass";
-      filter.frequency.setValueAtTime(freq * (1 + intensity * 0.8), startTime);
-      filter.Q.value = 3 + intensity * 6;
-
-      const gain = this.ctx.createGain();
-      const attack = Math.max(0.015, 0.05 - intensity * 0.02);
-      const peakLevel = 0.07 + intensity * 0.14;
-      const decay = Math.max(0.18, 0.36 - intensity * 0.16);
       gain.gain.setValueAtTime(0.0001, startTime);
-      gain.gain.linearRampToValueAtTime(peakLevel, startTime + attack);
+      gain.gain.linearRampToValueAtTime(velocity * 0.4, startTime + attack);
       gain.gain.exponentialRampToValueAtTime(0.0001, startTime + decay);
 
-      osc.connect(filter).connect(gain).connect(this.masterGain);
+      osc.connect(gain).connect(this.masterGain);
       osc.start(startTime);
-      vibrato.start(startTime);
-
-      const stopTime = startTime + Math.max(decay, 0.22);
-      osc.stop(stopTime);
-      vibrato.stop(stopTime);
+      osc.stop(startTime + decay + 0.05);
     }
 
     playSynthStab() {
@@ -953,6 +941,16 @@ function createBeatEngine() {
   }
 
   return new BeatEngineImpl();
+}
+
+const MIDI_A4 = 69;
+const A4_FREQUENCY = 440;
+
+function midiToFrequency(noteNumber) {
+  if (!Number.isFinite(noteNumber)) {
+    return A4_FREQUENCY;
+  }
+  return A4_FREQUENCY * Math.pow(2, (noteNumber - MIDI_A4) / 12);
 }
 
 function createSilentBeatEngine(message) {
