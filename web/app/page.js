@@ -28,6 +28,8 @@ const CONTACT_INSTRUMENTS = {
   2: { waveform: "square", gain: 0.24, attack: 0.012, release: 0.28, filter: { type: "bandpass", frequency: 1600, q: 3.5 } }
 };
 const DEFAULT_CONTACT_INSTRUMENT = { waveform: "triangle", gain: 0.26, attack: 0.015, release: 0.32 };
+const MAX_BATCHED_INPUT = 6;
+const MIN_MS_PER_CHAR = 35;
 
 export default function Page() {
   const cpmHistoryRef = useRef([]);
@@ -59,8 +61,11 @@ export default function Page() {
   const audioEngineRef = useRef(null);
   const mountedRef = useRef(true);
   const [sessionStats, setSessionStats] = useState({ chars: 0, startMs: null });
+  const [antiCheatWarning, setAntiCheatWarning] = useState("");
+  const lastProgressTimeRef = useRef(null);
   const blockClipboardInteraction = useCallback((event) => {
     event.preventDefault();
+    setAntiCheatWarning("Clipboard actions are disabled — please type each character manually.");
     return false;
   }, []);
 
@@ -73,6 +78,7 @@ export default function Page() {
     setCursor(0);
     setTyped("");
     setEvents((prev) => [...prev]);
+    setAntiCheatWarning("");
     completionRef.current = false;
   }, []);
   useEffect(() => {
@@ -220,6 +226,7 @@ export default function Page() {
   const registerProgress = useCallback((delta) => {
     if (delta <= 0) return;
     const time = Date.now();
+    lastProgressTimeRef.current = time;
     const trimmedDelta = Math.max(0, Math.min(delta, passage.length - cursor));
     if (!trimmedDelta) return;
     setEvents((prev) => {
@@ -233,6 +240,15 @@ export default function Page() {
     }));
   }, [cursor, passage.length]);
 
+  const isSuspiciousInput = (delta, now) => {
+    if (delta <= 0) return false;
+    if (delta >= MAX_BATCHED_INPUT) return true;
+    const lastTime = lastProgressTimeRef.current;
+    if (!lastTime || delta <= 1) return false;
+    const elapsed = now - lastTime;
+    return elapsed < delta * MIN_MS_PER_CHAR;
+  };
+
   function onChange(e) {
     if (!passage.length) {
       setTyped("");
@@ -241,12 +257,24 @@ export default function Page() {
     }
     const limit = passage.length || undefined;
     const value = typeof limit === "number" ? e.target.value.slice(0, limit) : e.target.value;
-    setTyped(value);
+    const now = Date.now();
     let correctCount = 0;
     while (correctCount < value.length && passage[correctCount] === value[correctCount]) {
       correctCount += 1;
     }
     const delta = Math.max(0, correctCount - cursor);
+    if (isSuspiciousInput(delta, now)) {
+      setAntiCheatWarning("Copy/paste is blocked; keep typing each character manually.");
+      if (inputRef.current) {
+        inputRef.current.value = typed;
+        inputRef.current.setSelectionRange(cursor, cursor);
+      }
+      return;
+    }
+    if (antiCheatWarning) {
+      setAntiCheatWarning("");
+    }
+    setTyped(value);
     if (delta > 0) registerProgress(delta);
     setCursor(correctCount);
     if (
@@ -290,6 +318,7 @@ export default function Page() {
     setBestMinuteCpm(0);
     setPassagesCompleted(0);
     completionRef.current = false;
+    setAntiCheatWarning("");
     startFallbackRace();
   }, [startFallbackRace]);
 
@@ -400,11 +429,16 @@ export default function Page() {
             border: "1px solid #ccc",
             outline: "none",
             fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-            background: awaitingNext ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.05)",
-            color: "#f8fafc",
-            boxSizing: "border-box"
+          background: awaitingNext ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.05)",
+          color: "#f8fafc",
+          boxSizing: "border-box"
           }}
         />
+        {antiCheatWarning && (
+          <div style={{ marginTop: 8, fontSize: 14, color: "#f87171" }} role="status">
+            {antiCheatWarning}
+          </div>
+        )}
       </div>
 
       <StatsPanel
