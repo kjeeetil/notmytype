@@ -40,6 +40,7 @@ export default function Page() {
   const [now, setNow] = useState(Date.now());
   const completionRef = useRef(false);
   const [scores, setScores] = useState([]);
+  const [connectionError, setConnectionError] = useState(null);
 
   const inputRef = useRef(null);
   const pendingMatchRef = useRef(true);
@@ -93,6 +94,9 @@ export default function Page() {
     s.on("scores:update", (list = []) => {
       setScores(Array.isArray(list) ? list : []);
     });
+    s.on("connect", () => {
+      setConnectionError(null);
+    });
     s.on("room:state", (msg) => {
       setPlayers(msg.players || []);
       setCountdownMs(msg.countdownMs ?? null);
@@ -118,9 +122,13 @@ export default function Page() {
     s.on("race:progress", (msg) => {
       setPlayers(prev => prev.map(p => p.id === msg.userId ? { ...p, progress: msg.progressChars, wpm: msg.wpm, acc: msg.acc } : p));
     });
-    s.on("connect_error", handleConnectionIssue);
-    s.on("disconnect", () => {
-      if (!navigator.onLine) handleConnectionIssue();
+    s.on("connect_error", (err) => {
+      setConnectionError(err?.message || `Unable to reach server at ${url}`);
+      handleConnectionIssue();
+    });
+    s.on("disconnect", (reason) => {
+      setConnectionError(reason || `Disconnected from server at ${url}`);
+      if (!navigator.onLine) handleConnectionIssue(); else handleConnectionIssue();
     });
     return () => { s.close(); };
   }, [startFallbackRace]);
@@ -317,6 +325,17 @@ export default function Page() {
     }
   }, [socket]);
 
+  const retryConnection = useCallback(() => {
+    if (!socket) return;
+    try {
+      setConnectionError(null);
+      socket.connect();
+      pendingMatchRef.current = true;
+    } catch (_) {
+      // no-op; socket.io will keep retrying due to reconnection: true
+    }
+  }, [socket]);
+
   function handleCompletion() {
     completionRef.current = true;
     setTyped("");
@@ -376,6 +395,40 @@ export default function Page() {
 
   return (
     <div style={{ position: "relative", minHeight: "100vh", overflow: "hidden", background: "#000" }}>
+      {connectionError && (
+        <div
+          style={{
+            position: "absolute",
+            top: 8,
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 2,
+            background: "#7f1d1d",
+            color: "#fde68a",
+            border: "1px solid rgba(252,211,77,0.4)",
+            borderRadius: 10,
+            padding: "10px 12px",
+            display: "flex",
+            gap: 12,
+            alignItems: "center",
+            boxShadow: "0 4px 10px rgba(0,0,0,0.4)"
+          }}
+        >
+          <span style={{ fontSize: 13 }}>Realtime server unreachable: {String(connectionError)}</span>
+          <button
+            onClick={retryConnection}
+            style={{
+              background: "#f59e0b",
+              color: "#111827",
+              border: "none",
+              borderRadius: 8,
+              padding: "6px 10px",
+              fontWeight: 600,
+              cursor: "pointer"
+            }}
+          >Retry</button>
+        </div>
+      )}
       <Starfield speed={effectiveMetrics.responsiveCpm} />
       <main style={{ position: "relative", zIndex: 1, maxWidth: 720, margin: "40px auto", padding: 16, color: "#f8fafc" }}>
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, marginBottom: 12 }}>
