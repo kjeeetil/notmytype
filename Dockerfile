@@ -1,37 +1,23 @@
 # syntax=docker/dockerfile:1.6
-# Combined Dockerfile for server + web
-FROM node:20-alpine AS server-deps
-WORKDIR /srv
-COPY server/package*.json ./
-# Install production dependencies for the server
-RUN npm ci --omit=dev
-COPY server ./
-
-FROM node:20-alpine AS web-builder
-WORKDIR /web
-COPY web/package*.json ./
-# Install all dependencies to build Next.js
-RUN npm ci
-COPY web ./
-# Disable telemetry and build the Next.js app
-ENV NEXT_TELEMETRY_DISABLED=1
-RUN npm run build
-
-FROM node:20-alpine
+# Root Dockerfile proxies to the Next.js build in ./web for convenience
+FROM node:20-alpine AS deps
 WORKDIR /app
-RUN apk add --no-cache bash tini
+COPY web/package*.json ./
+RUN --mount=type=cache,target=/root/.npm npm ci
 
+FROM node:20-alpine AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY web ./
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN --mount=type=cache,target=/app/.next/cache npm run build
+
+FROM node:20-alpine AS runner
+WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=8080
-ENV SERVER_PORT=8081
-ENV NEXT_PUBLIC_SOCKET_URL=http://localhost:8081
-
-COPY --from=server-deps /srv ./server
-COPY --from=web-builder /web/.next/standalone ./web
-COPY --from=web-builder /web/.next/static ./web/.next/static
-COPY start.sh ./start.sh
-RUN chmod +x start.sh
-
-EXPOSE 8080 8081
-ENTRYPOINT ["/sbin/tini","--"]
-CMD ["./start.sh"]
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
+COPY --from=builder /app/public ./public
+EXPOSE 8080
+CMD ["node","server.js"]

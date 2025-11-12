@@ -1,6 +1,5 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { io } from "socket.io-client";
 
 const WINDOW_FLOAT_MS = 10_000;
 const WINDOW_MINUTE_MS = 60_000;
@@ -14,25 +13,8 @@ const FALLBACK_PASSAGES = [
   "The company blends Pan-African and Scandinavian values where sustainability, localisation, empowerment and giving back are a way of doing business.",
   "Our operating model is integrated, flexible and efficient with a commitment to empower communities beyond local content obligations."
 ];
-const DEFAULT_SOCKET_URL = "http://localhost:8080";
-
-function getSocketBaseUrl() {
-  let runtimeValue;
-  if (typeof window !== "undefined") {
-    if (window.__ENV && window.__ENV.NEXT_PUBLIC_SOCKET_URL) {
-      runtimeValue = window.__ENV.NEXT_PUBLIC_SOCKET_URL;
-    } else if (window.location && window.location.origin) {
-      // Prefer current page origin when not explicitly configured
-      runtimeValue = window.location.origin;
-    }
-  }
-  const candidate = runtimeValue || process.env.NEXT_PUBLIC_SOCKET_URL || DEFAULT_SOCKET_URL;
-  return candidate.replace(/\/$/, "");
-}
 
 export default function Page() {
-  const [players, setPlayers] = useState([]);
-  const [countdownMs, setCountdownMs] = useState(null);
   const [startedAt, setStartedAt] = useState(null);
   const [cursor, setCursor] = useState(0);
   const [typed, setTyped] = useState("");
@@ -45,14 +27,12 @@ export default function Page() {
   const [now, setNow] = useState(Date.now());
   const completionRef = useRef(false);
   const [scores, setScores] = useState([]);
-  const [connectionError, setConnectionError] = useState(null);
+  const [scoreError, setScoreError] = useState(null);
+  const [scoreSubmitError, setScoreSubmitError] = useState(null);
+  const [isSubmittingScore, setIsSubmittingScore] = useState(false);
 
   const inputRef = useRef(null);
-  const pendingMatchRef = useRef(true);
-  const [socket, setSocket] = useState(null);
   const fallbackTimerRef = useRef(null);
-  const passageRef = useRef("");
-  const awaitingNextRef = useRef(false);
   const [passagesCompleted, setPassagesCompleted] = useState(0);
   const [showNamePrompt, setShowNamePrompt] = useState(false);
   const [pendingScore, setPendingScore] = useState(null);
@@ -69,116 +49,16 @@ export default function Page() {
     setPassage(fallback);
     setLoadingPassage(false);
     setAwaitingNext(false);
-    setCountdownMs(null);
     setStartedAt(Date.now());
-    setPlayers([]);
     setCursor(0);
     setTyped("");
     setEvents((prev) => [...prev]);
     completionRef.current = false;
   }, []);
   useEffect(() => {
-    passageRef.current = passage;
-  }, [passage]);
-  useEffect(() => {
-    awaitingNextRef.current = awaitingNext;
-  }, [awaitingNext]);
-  useEffect(() => {
-    const url = getSocketBaseUrl();
-    // Enable polling fallback in addition to websockets for constrained networks
-    const s = io(url, { transports: ["websocket", "polling"], reconnection: true });
-    setSocket(s);
-
-    const handleConnectionIssue = () => {
-      pendingMatchRef.current = true;
-      if (passageRef.current && !awaitingNextRef.current) {
-        return;
-      }
-      startFallbackRace();
-    };
-
-    s.on("scores:update", (list = []) => {
-      setScores(Array.isArray(list) ? list : []);
-    });
-    s.on("connect", () => {
-      setConnectionError(null);
-    });
-    s.on("room:state", (msg) => {
-      setPlayers(msg.players || []);
-      setCountdownMs(msg.countdownMs ?? null);
-      if (msg.passage) {
-        setPassage(msg.passage);
-        setLoadingPassage(false);
-        completionRef.current = false;
-        setAwaitingNext(false);
-      }
-    });
-    s.on("race:start", (msg) => {
-      setStartedAt(msg.startedAt);
-      if (msg.passage) {
-        setPassage(msg.passage);
-        setLoadingPassage(false);
-      }
-      completionRef.current = false;
-      setCursor(0);
-      setTyped("");
-      setAwaitingNext(false);
-      inputRef.current?.focus();
-    });
-    s.on("race:progress", (msg) => {
-      setPlayers(prev => prev.map(p => p.id === msg.userId ? { ...p, progress: msg.progressChars, wpm: msg.wpm, acc: msg.acc } : p));
-    });
-    function buildErrorMessage(baseMessage, err) {
-      try {
-        const hints = [];
-        const loc = typeof window !== "undefined" ? window.location : null;
-        const isOnline = typeof navigator !== "undefined" ? navigator.onLine : true;
-        const msg = err?.message || String(err || "");
-        const reason = [baseMessage, msg].filter(Boolean).join(": ");
-        const isHttps = loc && loc.protocol === "https:";
-        const isLocalhost = /^(https?:\/\/)?(localhost|127\.0\.0\.1)(:|\b)/i.test(url);
-        if (!isOnline) hints.push("You appear to be offline.");
-        if (isHttps && !isLocalhost && /^http:\/\//i.test(url)) {
-          hints.push("Mixed content: app is HTTPS but socket URL is HTTP.");
-        }
-        if (loc && loc.hostname && !url.includes(loc.hostname) && !isLocalhost) {
-          hints.push("Host mismatch: socket host differs from app host.");
-        }
-        hints.push("Proxy/load balancer must allow WebSocket upgrades on /socket.io.");
-        hints.push("Polling fallback enabled; some networks still block long polling.");
-        return { reason, hints };
-      } catch (_) {
-        return { reason: baseMessage, hints: [] };
-      }
-    }
-
-    s.on("connect_error", (err) => {
-      const details = buildErrorMessage(`Unable to reach server at ${url}`, err);
-      setConnectionError(details);
-      handleConnectionIssue();
-    });
-    s.on("disconnect", (reason) => {
-      const details = buildErrorMessage(`Disconnected from server at ${url}`, reason);
-      setConnectionError(details);
-      handleConnectionIssue();
-    });
-    return () => { s.close(); };
+    startFallbackRace();
   }, [startFallbackRace]);
 
-  useEffect(() => {
-    if (!socket) return;
-    const maybeRequestMatch = () => {
-      if (pendingMatchRef.current) {
-        socket.emit("quick:match");
-        pendingMatchRef.current = false;
-      }
-    };
-    socket.on("connect", maybeRequestMatch);
-    maybeRequestMatch();
-    return () => {
-      socket.off("connect", maybeRequestMatch);
-    };
-  }, [socket]);
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
@@ -244,7 +124,6 @@ export default function Page() {
     if (!loadingPassage || passage.length) return;
     fallbackTimerRef.current = setTimeout(() => {
       startFallbackRace();
-      pendingMatchRef.current = true;
     }, 4000);
     return () => {
       if (fallbackTimerRef.current) {
@@ -253,17 +132,25 @@ export default function Page() {
       }
     };
   }, [loadingPassage, passage.length, startFallbackRace]);
-  useEffect(() => {
-    const base = getSocketBaseUrl();
-    const url = `${base}/scores`;
-    fetch(url).then(async (res) => {
-      if (!res.ok) return;
+  const refreshScores = useCallback(async () => {
+    try {
+      const res = await fetch("/api/scores", { cache: "no-store" });
+      if (!res.ok) throw new Error("Failed to fetch scores");
       const data = await res.json();
       if (data && Array.isArray(data.scores)) {
         setScores(data.scores);
       }
-    }).catch(() => {});
+      setScoreError(null);
+    } catch (err) {
+      setScoreError(err?.message || "Unable to load scores");
+    }
   }, []);
+
+  useEffect(() => {
+    refreshScores();
+    const id = setInterval(refreshScores, 30000);
+    return () => clearInterval(id);
+  }, [refreshScores]);
 
   const metrics = useMemo(() => computeMetrics(events, now), [events, now]);
   const [lastMetrics, setLastMetrics] = useState(() => metrics);
@@ -314,15 +201,6 @@ export default function Page() {
     }));
   }, [cursor, passage.length]);
 
-  function onKey(e) {
-    if (!socket || startedAt === null || !passage.length) return;
-    const expected = passage[cursor] ?? "";
-    const key = e.key.length === 1 ? e.key : (e.key === " " ? " " : "");
-    if (!key) return;
-    const correct = key === expected;
-    socket.emit("race:keystroke", { t: Date.now(), key, correct });
-  }
-
   function onChange(e) {
     if (!passage.length) {
       setTyped("");
@@ -349,129 +227,77 @@ export default function Page() {
     }
   }
 
-  const queueMatchRequest = useCallback(() => {
-    pendingMatchRef.current = true;
-    if (socket?.connected) {
-      socket.emit("quick:match");
-      pendingMatchRef.current = false;
-    }
-  }, [socket]);
-
-  const retryConnection = useCallback(() => {
-    if (!socket) return;
-    try {
-      setConnectionError(null);
-      socket.connect();
-      pendingMatchRef.current = true;
-    } catch (_) {
-      // no-op; socket.io will keep retrying due to reconnection: true
-    }
-  }, [socket]);
-
   function handleCompletion() {
     completionRef.current = true;
     setTyped("");
     setCursor(0);
     setStartedAt(null);
-    setCountdownMs(null);
-    setPlayers([]);
-
-    setPassagesCompleted((prev) => prev + 1);
-    const completed = passagesCompleted + 1;
-    if (completed >= 3) {
-      const { chars, startMs } = sessionStats;
-      const durationMs = startMs ? Math.max(1, Date.now() - startMs) : 1;
-      const avgCpm = durationMs > 0 ? (chars / durationMs) * 60000 : 0;
-      setPendingScore(Math.round(avgCpm));
-      setShowNamePrompt(true);
-      setPassagesCompleted(0);
-      setAwaitingNext(false);
-      setLoadingPassage(false);
-      setPassage("");
-      return;
-    }
-
-    if (socket?.connected) {
-      setAwaitingNext(true);
-      setPassage("");
-      setLoadingPassage(true);
-      queueMatchRequest();
-    } else {
+    setPassagesCompleted((prev) => {
+      const completed = prev + 1;
+      if (completed >= 3) {
+        const { chars, startMs } = sessionStats;
+        const durationMs = startMs ? Math.max(1, Date.now() - startMs) : 1;
+        const avgCpm = durationMs > 0 ? (chars / durationMs) * 60000 : 0;
+        setPendingScore(Math.round(avgCpm));
+        setScoreSubmitError(null);
+        setShowNamePrompt(true);
+        setAwaitingNext(true);
+        setLoadingPassage(true);
+        setPassage("");
+        return 0;
+      }
       startFallbackRace();
-      queueMatchRequest();
-    }
+      return completed;
+    });
   }
 
-  const submitScore = (name) => {
-    if (pendingScore === null) return;
-    const entry = {
-      name: name || "Anonymous",
-      score: pendingScore,
-      timestamp: Date.now()
-    };
-    if (socket?.connected) {
-      socket.emit("score:submit", entry);
-    }
-    setPendingScore(null);
-    setShowNamePrompt(false);
-    setPlayerName(name);
+  const resetAfterScore = useCallback(() => {
     setSessionStats({ chars: 0, startMs: null });
     setEvents([]);
     setPeakCpm(0);
     setBestMinuteCpm(0);
-    setPassage("");
-    setAwaitingNext(true);
-    setLoadingPassage(true);
-    queueMatchRequest();
-  };
+    setPassagesCompleted(0);
+    completionRef.current = false;
+    startFallbackRace();
+  }, [startFallbackRace]);
+
+  const submitScore = useCallback(async (name) => {
+    if (pendingScore === null || isSubmittingScore) return;
+    const payload = {
+      name: name || "Anonymous",
+      score: pendingScore
+    };
+    setIsSubmittingScore(true);
+    setScoreSubmitError(null);
+    try {
+      const res = await fetch("/api/scores", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) {
+        const errorBody = await res.json().catch(() => ({}));
+        throw new Error(errorBody?.error || "Failed to save score");
+      }
+      const data = await res.json();
+      if (data && Array.isArray(data.scores)) {
+        setScores(data.scores);
+      }
+      setScoreError(null);
+      setPendingScore(null);
+      setShowNamePrompt(false);
+      setPlayerName(name);
+      resetAfterScore();
+      refreshScores();
+    } catch (err) {
+      setScoreSubmitError(err?.message || "Unable to save score");
+    } finally {
+      setIsSubmittingScore(false);
+    }
+  }, [pendingScore, isSubmittingScore, resetAfterScore, refreshScores]);
 
   return (
     <div style={{ position: "relative", minHeight: "100vh", overflow: "hidden", background: "#000" }}>
-      {connectionError && (
-        <div
-          style={{
-            position: "absolute",
-            top: 8,
-            left: "50%",
-            transform: "translateX(-50%)",
-            zIndex: 2,
-            background: "#7f1d1d",
-            color: "#fde68a",
-            border: "1px solid rgba(252,211,77,0.4)",
-            borderRadius: 10,
-            padding: "10px 12px",
-            display: "flex",
-            gap: 12,
-            alignItems: "center",
-            boxShadow: "0 4px 10px rgba(0,0,0,0.4)"
-          }}
-        >
-          <div style={{ display: "flex", flexDirection: "column" }}>
-            <span style={{ fontSize: 13, marginBottom: 4 }}>
-              Realtime connection problem: {String(connectionError?.reason || connectionError)}
-            </span>
-            {Array.isArray(connectionError?.hints) && connectionError.hints.length > 0 && (
-              <ul style={{ margin: 0, paddingInlineStart: 16, fontSize: 12, color: "#fff" }}>
-                {connectionError.hints.slice(0, 3).map((h, i) => (
-                  <li key={i} style={{ opacity: 0.9 }}>{h}</li>
-                ))}
-              </ul>
-            )}
-          </div>
-          <button
-            onClick={retryConnection}
-            style={{
-              background: "#f59e0b",
-              color: "#111827",
-              border: "none",
-              borderRadius: 8,
-              padding: "6px 10px",
-              fontWeight: 600,
-              cursor: "pointer"
-            }}
-          >Retry</button>
-        </div>
-      )}
       <Starfield speed={effectiveMetrics.responsiveCpm} />
       <main style={{ position: "relative", zIndex: 1, maxWidth: 720, margin: "40px auto", padding: 16, color: "#f8fafc" }}>
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, marginBottom: 12 }}>
@@ -519,7 +345,6 @@ export default function Page() {
         </p>
         <input
           ref={inputRef}
-          onKeyDown={onKey}
           onChange={onChange}
           value={typed}
           placeholder={
@@ -553,29 +378,8 @@ export default function Page() {
         bestMinute={bestMinuteCpm}
         series={effectiveMetrics.series}
       />
-      <Scoreboard scores={scores} />
+      <Scoreboard scores={scores} error={scoreError} />
 
-      <div style={{ marginTop: 24 }}>
-        {(players || []).map((p) => {
-          const denominator = passage.length || 1;
-          const progress = Math.min(100, ((p.progress || 0) / denominator) * 100);
-          return (
-            <div key={p.id} style={{ marginBottom: 10 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
-                <span>{p.handle || p.id}</span>
-                <span>{p.wpm ?? 0} WPM • {p.acc ?? 100}%</span>
-              </div>
-              <div style={{ height: 8, background: "rgba(255,255,255,0.2)", borderRadius: 8 }}>
-                <div style={{ width: `${progress}%`, height: 8, background: "#f8fafc", borderRadius: 8 }} />
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {countdownMs !== null && countdownMs > 0 && (
-        <div style={{ marginTop: 12, fontSize: 14 }}>Race starts in {Math.ceil(countdownMs/1000)}s</div>
-      )}
       </main>
       {showNamePrompt && (
         <NamePrompt
@@ -587,16 +391,11 @@ export default function Page() {
           onSkip={() => {
             setShowNamePrompt(false);
             setPendingScore(null);
-            setSessionStats({ chars: 0, startMs: null });
-            setPassagesCompleted(0);
-            setEvents([]);
-            setPeakCpm(0);
-            setBestMinuteCpm(0);
-            setPassage("");
-            setAwaitingNext(true);
-            setLoadingPassage(true);
-            queueMatchRequest();
+            setScoreSubmitError(null);
+            resetAfterScore();
           }}
+          submitting={isSubmittingScore}
+          error={scoreSubmitError}
         />
       )}
     </div>
@@ -708,7 +507,7 @@ function Chart({ series }) {
   );
 }
 
-function Scoreboard({ scores }) {
+function Scoreboard({ scores, error }) {
   const prepared = (Array.isArray(scores) ? scores : [])
     .map((entry, idx) => {
       if (!entry || typeof entry !== "object") return null;
@@ -740,6 +539,9 @@ function Scoreboard({ scores }) {
   return (
     <section style={{ marginTop: 24, padding: 16, border: "1px solid rgba(255,255,255,0.2)", borderRadius: 12, background: "rgba(3,7,18,0.7)" }}>
       <h2 style={{ marginBottom: 12, fontSize: 18, fontWeight: 600 }}>Recent Runs</h2>
+      {error && (
+        <div style={{ color: "#fca5a5", marginBottom: 8, fontSize: 13 }}>{error}</div>
+      )}
       {prepared.length === 0 ? (
         <div style={{ color: "#94a3b8" }}>Complete three passages to record your first score.</div>
       ) : (
@@ -756,7 +558,7 @@ function Scoreboard({ scores }) {
   );
 }
 
-function NamePrompt({ inputRef, pendingScore, playerName, setPlayerName, onSubmit, onSkip }) {
+function NamePrompt({ inputRef, pendingScore, playerName, setPlayerName, onSubmit, onSkip, submitting, error }) {
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 5 }}>
       <div style={{ background: "#0f172a", borderRadius: 16, padding: 24, width: "min(90vw, 420px)", color: "#f8fafc", boxShadow: "0 20px 60px rgba(0,0,0,0.6)" }}>
@@ -765,6 +567,7 @@ function NamePrompt({ inputRef, pendingScore, playerName, setPlayerName, onSubmi
         <form
           onSubmit={(e) => {
             e.preventDefault();
+            if (submitting) return;
             onSubmit(playerName);
           }}
         >
@@ -778,9 +581,26 @@ function NamePrompt({ inputRef, pendingScore, playerName, setPlayerName, onSubmi
             placeholder="Anonymous"
             style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #334155", background: "#1e293b", color: "#f8fafc", marginBottom: 16 }}
           />
+          {error && (
+            <p style={{ color: "#fca5a5", fontSize: 13, marginTop: 0, marginBottom: 12 }}>{error}</p>
+          )}
           <div style={{ display: "flex", gap: 12 }}>
-            <button type="submit" style={{ flex: 1, padding: 10, border: "none", borderRadius: 8, background: "#0ea5e9", color: "#fff", fontWeight: 600 }}>
-              Save score
+            <button
+              type="submit"
+              disabled={submitting}
+              style={{
+                flex: 1,
+                padding: 10,
+                border: "none",
+                borderRadius: 8,
+                background: submitting ? "#38bdf8" : "#0ea5e9",
+                color: "#fff",
+                fontWeight: 600,
+                opacity: submitting ? 0.7 : 1,
+                cursor: submitting ? "wait" : "pointer"
+              }}
+            >
+              {submitting ? "Saving…" : "Save score"}
             </button>
             <button type="button" onClick={onSkip} style={{ padding: 10, borderRadius: 8, border: "1px solid #64748b", background: "transparent", color: "#e2e8f0" }}>
               Skip
