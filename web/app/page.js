@@ -20,6 +20,14 @@ const CONTACT_MELODY_DURATION = typeof CONTACT_LOOP_DURATION === "number" && CON
   : (CONTACT_MELODY_NOTES.length ? CONTACT_MELODY_NOTES[CONTACT_MELODY_NOTES.length - 1].start : 8);
 const CONTACT_SPEED_MIN = 0.55;
 const CONTACT_SPEED_MAX = 1.4;
+const AUDIO_TICK_INTERVAL_MS = 30;
+const AUDIO_SMOOTHING_RATE = 3; // how quickly playback catches up to target tempo
+const CONTACT_INSTRUMENTS = {
+  0: { waveform: "sawtooth", gain: 0.38, attack: 0.03, release: 0.5, filter: { type: "lowpass", frequency: 520, q: 0.8 } },
+  1: { waveform: "triangle", gain: 0.28, attack: 0.018, release: 0.38, filter: { type: "lowpass", frequency: 1200, q: 1.1 } },
+  2: { waveform: "square", gain: 0.24, attack: 0.012, release: 0.28, filter: { type: "bandpass", frequency: 1600, q: 3.5 } }
+};
+const DEFAULT_CONTACT_INSTRUMENT = { waveform: "triangle", gain: 0.26, attack: 0.015, release: 0.32 };
 
 export default function Page() {
   const [startedAt, setStartedAt] = useState(null);
@@ -688,7 +696,8 @@ function createBeatEngine() {
       this.masterGain = null;
       this.isPlaying = false;
       this.timer = null;
-      this.speed = CONTACT_SPEED_MIN;
+      this.currentSpeed = CONTACT_SPEED_MIN;
+      this.targetSpeed = CONTACT_SPEED_MIN;
       this.startPromise = null;
       this.shouldPlay = false;
       this.unsupported = false;
@@ -697,12 +706,13 @@ function createBeatEngine() {
       this.contactLoopDuration = CONTACT_MELODY_DURATION || 8;
       this.contactLoopAnchor = 0;
       this.contactNoteIndex = 0;
-      this.contactTempoFactor = CONTACT_SPEED_MIN;
+      this.lastTickTime = null;
     }
 
     resetContactLoop(anchorTime = 0) {
       this.contactLoopAnchor = anchorTime;
       this.contactNoteIndex = 0;
+      this.lastTickTime = null;
     }
 
     async ensureContext() {
@@ -793,42 +803,42 @@ function createBeatEngine() {
     }
 
     setSpeed(multiplier) {
-      const clamped = Math.min(
-        CONTACT_SPEED_MAX,
-        Math.max(CONTACT_SPEED_MIN, typeof multiplier === "number" ? multiplier : CONTACT_SPEED_MIN)
-      );
-      this.speed = clamped;
-      this.contactTempoFactor = clamped;
-      if (this.isPlaying) {
-        if (this.timer) {
-          clearTimeout(this.timer);
-          this.timer = null;
-        }
-        this.scheduleLoop();
+      const clamped = this.clampSpeed(multiplier);
+      this.targetSpeed = clamped;
+      if (!this.isPlaying) {
+        this.currentSpeed = clamped;
       }
+    }
+
+    clampSpeed(value) {
+      const numeric = typeof value === "number" && Number.isFinite(value) ? value : CONTACT_SPEED_MIN;
+      return Math.min(CONTACT_SPEED_MAX, Math.max(CONTACT_SPEED_MIN, numeric));
     }
 
     scheduleLoop() {
       if (!this.isPlaying) return;
-      const interval = this.computeTickInterval();
       this.timer = setTimeout(() => {
         this.tick();
         this.scheduleLoop();
-      }, interval);
-    }
-
-    computeTickInterval() {
-      const range = Math.max(0.01, CONTACT_SPEED_MAX - CONTACT_SPEED_MIN);
-      const normalized = Math.min(1, Math.max(0, (this.speed - CONTACT_SPEED_MIN) / range));
-      const baseTempo = 40;
-      const maxTempo = 110;
-      const tempo = baseTempo + (maxTempo - baseTempo) * normalized;
-      return Math.max(35, (60 / tempo) * 1000 / 2);
+      }, AUDIO_TICK_INTERVAL_MS);
     }
 
     tick() {
       if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+      if (this.lastTickTime === null) {
+        this.lastTickTime = now;
+      }
+      const delta = now - this.lastTickTime;
+      this.lastTickTime = now;
+      this.updateCurrentSpeed(delta);
       this.scheduleContactMelody();
+    }
+
+    updateCurrentSpeed(deltaSeconds) {
+      const smoothing = Math.min(1, Math.max(0.02, deltaSeconds * AUDIO_SMOOTHING_RATE));
+      this.currentSpeed += (this.targetSpeed - this.currentSpeed) * smoothing;
+      this.currentSpeed = this.clampSpeed(this.currentSpeed);
     }
 
     scheduleContactMelody() {
@@ -837,13 +847,17 @@ function createBeatEngine() {
         this.resetContactLoop(this.ctx.currentTime);
       }
       const now = this.ctx.currentTime;
-      const tempoFactor = this.contactTempoFactor || 1;
+      const tempoFactor = this.currentSpeed || CONTACT_SPEED_MIN;
       const loopDuration = this.contactLoopDuration / tempoFactor;
       while (now - this.contactLoopAnchor >= loopDuration) {
         this.contactLoopAnchor += loopDuration;
         this.contactNoteIndex = 0;
       }
-      const lookahead = 0.4;
+      const normalizedTempo = Math.min(
+        1,
+        Math.max(0, (tempoFactor - CONTACT_SPEED_MIN) / (CONTACT_SPEED_MAX - CONTACT_SPEED_MIN))
+      );
+      const lookahead = 0.45 + (1 - normalizedTempo) * 0.35;
       let guard = 0;
       while (guard < this.contactNotes.length) {
         const note = this.contactNotes[this.contactNoteIndex];
@@ -852,7 +866,8 @@ function createBeatEngine() {
         if (scheduledStart > now + lookahead) {
           break;
         }
-        const scaledDuration = Math.max(0.05, note.duration / tempoFactor);
+        const durationScale = Math.max(1, tempoFactor);
+        const scaledDuration = Math.max(0.08, note.duration / durationScale);
         this.triggerContactNote(note, scheduledStart, scaledDuration);
         this.contactNoteIndex += 1;
         if (this.contactNoteIndex >= this.contactNotes.length) {
@@ -867,22 +882,38 @@ function createBeatEngine() {
       if (!this.ctx || !this.masterGain) return;
       const osc = this.ctx.createOscillator();
       const gain = this.ctx.createGain();
-      const waveform = note.channel === 0 ? "sawtooth" : note.channel === 2 ? "square" : "triangle";
-      osc.type = waveform;
+      const instrument = CONTACT_INSTRUMENTS[note.channel] || DEFAULT_CONTACT_INSTRUMENT;
+      osc.type = instrument.waveform || "triangle";
       const freq = midiToFrequency(note.note);
       osc.frequency.setValueAtTime(freq, startTime);
 
-      const velocity = Math.min(1, Math.max(0.15, note.velocity / 127));
-      const attack = 0.01;
-      const decay = Math.max(0.12, duration * 0.8);
+      if (instrument.filter && typeof this.ctx.createBiquadFilter === "function") {
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = instrument.filter.type || "lowpass";
+        if (instrument.filter.frequency) {
+          filter.frequency.setValueAtTime(instrument.filter.frequency, startTime);
+        }
+        if (instrument.filter.q) {
+          filter.Q.setValueAtTime(instrument.filter.q, startTime);
+        }
+        osc.connect(filter);
+        filter.connect(gain);
+      } else {
+        osc.connect(gain);
+      }
+
+      const velocity = Math.min(1, Math.max(0.12, note.velocity / 127));
+      const attack = instrument.attack ?? 0.015;
+      const release = Math.max(instrument.release ?? 0.3, duration * 0.9);
+      const peak = (instrument.gain ?? 0.25) * velocity;
 
       gain.gain.setValueAtTime(0.0001, startTime);
-      gain.gain.linearRampToValueAtTime(velocity * 0.4, startTime + attack);
-      gain.gain.exponentialRampToValueAtTime(0.0001, startTime + decay);
+      gain.gain.linearRampToValueAtTime(peak, startTime + attack);
+      gain.gain.exponentialRampToValueAtTime(0.0001, startTime + release);
 
-      osc.connect(gain).connect(this.masterGain);
+      gain.connect(this.masterGain);
       osc.start(startTime);
-      osc.stop(startTime + decay + 0.05);
+      osc.stop(startTime + release + 0.05);
     }
 
   }
