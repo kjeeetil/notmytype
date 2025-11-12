@@ -4,11 +4,11 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 COPY package.json ./
 # Install all deps to build Next.js
-RUN --mount=type=cache,target=/root/.npm npm ci
+RUN npm ci
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
-# Cache Next.js build artifacts between builds
-RUN --mount=type=cache,target=/app/.next/cache npm run build
+# Build Next.js standalone output
+RUN npm run build
 
 FROM node:20-alpine AS runner
 WORKDIR /app

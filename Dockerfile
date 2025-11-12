@@ -3,14 +3,14 @@
 FROM node:20-alpine AS deps
 WORKDIR /app
 COPY web/package*.json ./
-RUN --mount=type=cache,target=/root/.npm npm ci
+RUN npm ci
 
 FROM node:20-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY web ./
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN --mount=type=cache,target=/app/.next/cache npm run build
+RUN npm run build
 
 FROM node:20-alpine AS runner
 WORKDIR /app
