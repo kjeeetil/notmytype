@@ -1,9 +1,5 @@
 [
   {
-    "name": "Kjetil",
-    "score": 312
-  },
-  {
     "name": "Torfinn",
     "score": 159
   },
@@ -17,6 +13,6 @@
   },
   {
     "name": "Raph",
-    "score": "Deux"
+    "score": 2
   }
 ]
