@@ -17,6 +17,7 @@ time_sec,event,channel,note,note_name,velocity
 0.351562,note_off,0,47,B2,0
 0.351562,note_on,0,50,D3,76
 0.351562,note_off,9,42,F#2,0
+0.468750,note_on,0,50,D3,0
 0.468750,note_off,0,50,D3,0
 0.468750,note_on,9,40,E2,50
 0.468750,note_on,9,42,F#2,50
