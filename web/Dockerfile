@@ -1,10 +1,14 @@
+# syntax=docker/dockerfile:1.6
 # Web Dockerfile (Next.js standalone)
 FROM node:20-alpine AS builder
 WORKDIR /app
 COPY package.json ./
-RUN npm install --omit=dev
+# Install all deps to build Next.js
+RUN --mount=type=cache,target=/root/.npm npm ci
 COPY . .
-RUN npm run build
+ENV NEXT_TELEMETRY_DISABLED=1
+# Cache Next.js build artifacts between builds
+RUN --mount=type=cache,target=/app/.next/cache npm run build
 
 FROM node:20-alpine AS runner
 WORKDIR /app

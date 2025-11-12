@@ -1,8 +1,10 @@
+# syntax=docker/dockerfile:1.6
 # Server Dockerfile
 FROM node:20-alpine AS base
 WORKDIR /app
 COPY package.json ./
-RUN npm install --omit=dev
+# Use npm cache and install prod deps only
+RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev
 COPY index.js ./
 ENV NODE_ENV=production
 ENV PORT=8080

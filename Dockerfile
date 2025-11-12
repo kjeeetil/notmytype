@@ -1,16 +1,21 @@
+# syntax=docker/dockerfile:1.6
 # Combined Dockerfile for server + web
 FROM node:20-alpine AS server-deps
 WORKDIR /srv
 COPY server/package*.json ./
-RUN npm install --omit=dev
+# Use npm cache between builds for faster installs
+RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev
 COPY server ./
 
 FROM node:20-alpine AS web-builder
 WORKDIR /web
 COPY web/package*.json ./
-RUN npm install --omit=dev
+# Install all deps to build Next.js
+RUN --mount=type=cache,target=/root/.npm npm ci
 COPY web ./
-RUN npm run build
+# Speed up Next.js build and cache its compiled artifacts between builds
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN --mount=type=cache,target=/web/.next/cache npm run build
 
 FROM node:20-alpine
 WORKDIR /app

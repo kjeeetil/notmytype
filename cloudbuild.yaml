@@ -16,21 +16,53 @@ steps:
   - id: 'build-server'
     waitFor: ['-']
     name: 'gcr.io/cloud-builders/docker'
-    args: ['build','-t','${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/${_SERVICE_SERVER}:${SHORT_SHA}','server']
+    env:
+      - 'DOCKER_BUILDKIT=1'
+    args:
+      - 'build'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/${_SERVICE_SERVER}:${SHORT_SHA}'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/${_SERVICE_SERVER}:cache'
+      - '--build-arg'
+      - 'BUILDKIT_INLINE_CACHE=1'
+      - '--cache-from'
+      - '${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/${_SERVICE_SERVER}:cache'
+      - 'server'
   - id: 'push-server'
     waitFor: ['build-server']
     name: 'gcr.io/cloud-builders/docker'
     args: ['push','${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/${_SERVICE_SERVER}:${SHORT_SHA}']
+  - id: 'push-server-cache'
+    waitFor: ['build-server']
+    name: 'gcr.io/cloud-builders/docker'
+    args: ['push','${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/${_SERVICE_SERVER}:cache']
 
   # Build & push web image
   - id: 'build-web'
     waitFor: ['-']
     name: 'gcr.io/cloud-builders/docker'
-    args: ['build','-t','${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/${_SERVICE_WEB}:${SHORT_SHA}','web']
+    env:
+      - 'DOCKER_BUILDKIT=1'
+    args:
+      - 'build'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/${_SERVICE_WEB}:${SHORT_SHA}'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/${_SERVICE_WEB}:cache'
+      - '--build-arg'
+      - 'BUILDKIT_INLINE_CACHE=1'
+      - '--cache-from'
+      - '${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/${_SERVICE_WEB}:cache'
+      - 'web'
   - id: 'push-web'
     waitFor: ['build-web']
     name: 'gcr.io/cloud-builders/docker'
     args: ['push','${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/${_SERVICE_WEB}:${SHORT_SHA}']
+  - id: 'push-web-cache'
+    waitFor: ['build-web']
+    name: 'gcr.io/cloud-builders/docker'
+    args: ['push','${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/${_SERVICE_WEB}:cache']
 
   # Deploy server first
   - waitFor: ['push-server']
