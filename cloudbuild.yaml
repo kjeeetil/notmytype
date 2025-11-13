@@ -30,6 +30,9 @@ steps:
 images:
   - gcr.io/$PROJECT_ID/${_SERVICE_WEB}:${SHORT_SHA}
 
+options:
+  logging: CLOUD_LOGGING_ONLY
+
 substitutions:
   _SERVICE_WEB: notmytype
   _REGION: us-central1
