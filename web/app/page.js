@@ -68,6 +68,7 @@ export default function Page() {
   const [lastHeatmapStats, setLastHeatmapStats] = useState({});
   const [practiceMode, setPracticeMode] = useState(false);
   const [keyboardLayout, setKeyboardLayout] = useState("us");
+  const [comboValue, setComboValue] = useState(0);
   const lastProgressTimeRef = useRef(null);
   const blockClipboardInteraction = useCallback((event) => {
     event.preventDefault();
@@ -96,6 +97,7 @@ export default function Page() {
     setPassagesCompleted(0);
     currentKeyStatsRef.current = {};
     setLastHeatmapStats({});
+    setComboValue(0);
     if (practiceMode) {
       setShowNamePrompt(false);
       setPendingScore(null);
@@ -110,6 +112,14 @@ export default function Page() {
       startFallbackRace();
     }
   }, [practiceMode, showHeatmap, startFallbackRace]);
+
+  useEffect(() => {
+    if (!practiceMode) return undefined;
+    const id = setInterval(() => {
+      setComboValue((prev) => Math.max(0, prev - 1));
+    }, 1500);
+    return () => clearInterval(id);
+  }, [practiceMode]);
 
 
   useEffect(() => {
@@ -246,6 +256,10 @@ export default function Page() {
     });
   }, [passage, typed, cursor, practiceMode]);
 
+  const comboLevel = practiceMode
+    ? (comboValue >= 85 ? 3 : comboValue >= 60 ? 2 : comboValue >= 30 ? 1 : 0)
+    : 0;
+
   useEffect(() => {
     setPeakCpm((prev) => Math.max(prev, metrics.floatingCpm));
     setBestMinuteCpm((prev) => Math.max(prev, metrics.minuteCpm));
@@ -323,16 +337,23 @@ export default function Page() {
     const expected = passage[cursor] || "";
     const norm = (s) => (s || "").toLowerCase();
     const simpleChar = key.length === 1;
+    const isCorrect = simpleChar && norm(key) === norm(expected);
     // Record per-key stats for visible heatmap (letters normalized)
     if (simpleChar) {
       const label = normalizeKeyLabel(key);
       const stat = currentKeyStatsRef.current[label] || { total: 0, errors: 0 };
       stat.total += 1;
-      if (norm(key) !== norm(expected)) stat.errors += 1;
+      if (!isCorrect) stat.errors += 1;
       currentKeyStatsRef.current[label] = stat;
     }
+    if (simpleChar) {
+      setComboValue((prev) => {
+        const delta = isCorrect ? 6 : -25;
+        return Math.max(0, Math.min(100, prev + delta));
+      });
+    }
     // Trigger error shake on incorrect next key
-    if (simpleChar && norm(key) !== norm(expected)) {
+    if (simpleChar && !isCorrect) {
       setShakeFlag(true);
       setTimeout(() => setShakeFlag(false), 170);
     }
@@ -486,6 +507,9 @@ export default function Page() {
       <div style={{ fontSize: 13, color: "#94a3b8", marginBottom: 12 }}>
         Practice mode enables training cues and disables leaderboard submissions.
       </div>
+      {practiceMode && (
+        <ComboMeter value={comboValue} level={comboLevel} />
+      )}
       <div style={{ border: "1px solid rgba(255,255,255,0.2)", borderRadius: 12, padding: 16, background: "rgba(0,0,0,0.5)" }}>
         <p style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 18, lineHeight: 1.6, minHeight: 48 }}>
           {loadingPassage ? (
@@ -503,7 +527,11 @@ export default function Page() {
                   textDecorationColor: token.isCurrent ? "#0f172a" : undefined,
                   transition: "color 120ms ease, font-weight 120ms ease, background-color 120ms ease"
                 }}
-                className={practiceMode && token.isCurrent && shakeFlag ? "shake" : undefined}
+                className={(practiceMode && token.isCurrent)
+                  ? [shakeFlag ? "shake" : null, comboLevel > 0 ? `caret-glow-${comboLevel}` : null]
+                      .filter(Boolean)
+                      .join(" ") || undefined
+                  : undefined}
               >
                 {token.ch}
               </span>
@@ -608,6 +636,27 @@ function normalizeKeyLabel(key) {
   return key.toLowerCase();
 }
 
+function ComboMeter({ value, level }) {
+  const clamped = Math.max(0, Math.min(100, value));
+  const labels = ["", "Spark", "Flare", "Nova"];
+  const milestones = [30, 60, 85];
+  return (
+    <section className="combo-wrap">
+      <div className="combo-head">
+        <span>Combo meter</span>
+        <span>{level ? labels[level] : "warming up"}</span>
+      </div>
+      <div className="combo-bar">
+        <div className="combo-fill" style={{ width: `${clamped}%` }} />
+        {milestones.map((mark) => (
+          <span key={mark} className="combo-tick" style={{ left: `${mark}%` }} />
+        ))}
+      </div>
+      <div className="combo-caption">Accurate keystrokes build the combo; errors drain it.</div>
+    </section>
+  );
+}
+
 // Finger map for compact layout reference
 const FINGER_COLORS = {
   'pl': 'var(--finger-pinkie-left)',
@@ -681,7 +730,7 @@ const KEY_LAYOUTS = {
         keys: [
           { k: 'q', f: 'pl' }, { k: 'w', f: 'rl' }, { k: 'e', f: 'ml' }, { k: 'r', f: 'il' }, { k: 't', f: 'il' },
           { k: 'y', f: 'ir' }, { k: 'u', f: 'ir' }, { k: 'i', f: 'mr' }, { k: 'o', f: 'rr' }, { k: 'p', f: 'pr' },
-          { k: 'å', f: 'pr' }
+          { k: 'å', f: 'pr' }, { k: '¨', f: 'pr' }
         ]
       },
       {
@@ -689,13 +738,13 @@ const KEY_LAYOUTS = {
         keys: [
           { k: 'a', f: 'pl' }, { k: 's', f: 'rl' }, { k: 'd', f: 'ml' }, { k: 'f', f: 'il' }, { k: 'g', f: 'il' },
           { k: 'h', f: 'ir' }, { k: 'j', f: 'ir' }, { k: 'k', f: 'mr' }, { k: 'l', f: 'rr' }, { k: 'ø', f: 'pr' },
-          { k: 'æ', f: 'pr' }
+          { k: 'æ', f: 'pr' }, { k: "'", f: 'pr' }
         ]
       },
       {
-        offset: 50,
+        offset: 46,
         keys: [
-          { k: 'z', f: 'pl' }, { k: 'x', f: 'rl' }, { k: 'c', f: 'ml' }, { k: 'v', f: 'il' }, { k: 'b', f: 'il' },
+          { k: '<', f: 'pl' }, { k: 'z', f: 'pl' }, { k: 'x', f: 'rl' }, { k: 'c', f: 'ml' }, { k: 'v', f: 'il' }, { k: 'b', f: 'il' },
           { k: 'n', f: 'ir' }, { k: 'm', f: 'ir' }, { k: ',', f: 'mr' }, { k: '.', f: 'rr' }, { k: '-', f: 'pr' }
         ]
       },

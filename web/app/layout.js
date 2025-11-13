@@ -42,6 +42,15 @@ export default function RootLayout({ children }) {
 .heatmap-title{margin:0 0 8px 0;color:#e2e8f0;font-weight:600}
 .heatmap-note{font-size:12px;color:#94a3b8;margin-bottom:10px}
 .heatmap-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:10px}
+.combo-wrap{margin-top:12px;padding:12px;border:1px solid rgba(148,163,184,0.35);border-radius:12px;background:rgba(15,23,42,0.35)}
+.combo-head{display:flex;align-items:center;justify-content:space-between;font-size:14px;color:#cbd5f5;margin-bottom:8px;font-weight:600}
+.combo-bar{position:relative;width:100%;height:12px;border-radius:999px;background:rgba(15,23,42,0.6);overflow:hidden;border:1px solid rgba(148,163,184,0.3)}
+.combo-fill{position:absolute;inset:0;width:0%;background:linear-gradient(90deg,#38bdf8,#22d3ee,#f97316);transition:width 160ms ease;border-radius:999px;box-shadow:0 0 12px rgba(56,189,248,0.6)}
+.combo-tick{position:absolute;top:-3px;width:2px;height:18px;background:rgba(248,250,252,0.4)}
+.combo-caption{margin-top:6px;font-size:12px;color:#94a3b8}
+.caret-glow-1{text-shadow:0 0 6px rgba(56,189,248,0.95),0 0 12px rgba(14,165,233,0.7)}
+.caret-glow-2{text-shadow:0 0 6px rgba(56,189,248,0.95),0 0 16px rgba(14,165,233,0.75),0 0 24px rgba(244,114,182,0.6)}
+.caret-glow-3{text-shadow:0 0 10px rgba(249,115,22,0.95),0 0 20px rgba(234,179,8,0.8),0 0 32px rgba(59,130,246,0.6)}
 `
           }}
         />
