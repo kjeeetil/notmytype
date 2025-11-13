@@ -58,27 +58,27 @@ steps:
       - '-c'
       - |
         set -euo pipefail
-        KEEP=${_KEEP_RELEASES:-5}
-        if [[ "$KEEP" -le 0 ]]; then
-          echo "KEEP_RELEASES is $KEEP; skipping prune."
+        keep_count=${_KEEP_RELEASES:-5}
+        if [[ "$keep_count" -le 0 ]]; then
+          echo "KEEP_RELEASES is $keep_count; skipping prune."
           exit 0
         fi
-        IMAGE_PATH="${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/${_SERVICE_WEB}"
-        echo "Pruning $IMAGE_PATH, keeping $KEEP most recent images"
-        TMP=$(mktemp)
-        gcloud artifacts docker images list "$IMAGE_PATH" --sort-by="~UPDATE_TIME" --format="value(DIGEST)" > "$TMP"
-        TOTAL=$(grep -c '.' "$TMP" || true)
-        if [[ "$TOTAL" -le "$KEEP" ]]; then
-          echo "Only $TOTAL images found, nothing to prune."
-          rm -f "$TMP"
+        image_path="${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/${_SERVICE_WEB}"
+        echo "Pruning $image_path, keeping $keep_count most recent images"
+        tmp_file=$(mktemp)
+        gcloud artifacts docker images list "$image_path" --sort-by="~UPDATE_TIME" --format="value(DIGEST)" > "$tmp_file"
+        total_images=$(grep -c '.' "$tmp_file" || true)
+        if [[ "$total_images" -le "$keep_count" ]]; then
+          echo "Only $total_images images found, nothing to prune."
+          rm -f "$tmp_file"
           exit 0
         fi
-        tail -n "+$((KEEP+1))" "$TMP" | while read -r digest; do
+        tail -n "+$((keep_count+1))" "$tmp_file" | while read -r digest; do
           [[ -z "$digest" ]] && continue
-          echo "Deleting $IMAGE_PATH@$digest"
-          gcloud artifacts docker images delete "$IMAGE_PATH@$digest" --quiet --delete-tags || true
+          echo "Deleting $image_path@$digest"
+          gcloud artifacts docker images delete "$image_path@$digest" --quiet --delete-tags || true
         done
-        rm -f "$TMP"
+        rm -f "$tmp_file"
 
 images:
   - '${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/${_SERVICE_WEB}:${SHORT_SHA}'
