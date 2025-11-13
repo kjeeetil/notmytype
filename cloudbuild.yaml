@@ -4,9 +4,13 @@ steps:
     name: gcr.io/cloud-builders/docker
     args:
       - build
+      - --no-cache
+      - --pull
       - -t
       - gcr.io/$PROJECT_ID/${_SERVICE_WEB}:${SHORT_SHA}
-      - web
+      - -f
+      - Dockerfile
+      - .
 
   - id: push
     waitFor: [build]
