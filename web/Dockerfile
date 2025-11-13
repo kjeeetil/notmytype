@@ -2,7 +2,7 @@
 # Web Dockerfile (Next.js standalone)
 FROM node:20-alpine AS builder
 WORKDIR /app
-COPY package.json ./
+COPY package.json package-lock.json ./
 # Install all deps to build Next.js
 RUN npm ci
 COPY . .
