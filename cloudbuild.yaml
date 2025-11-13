@@ -10,8 +10,27 @@
 #   _KEEP_RELEASES (default 5)
 
 steps:
-  - id: 'build-web'
+  - id: 'ensure-artifact-repo'
     waitFor: ['-']
+    name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: bash
+    args:
+      - '-c'
+      - |
+        set -euo pipefail
+        REPO_PATH="projects/${_PROJECT_ID}/locations/${_REGION}/repositories/${_AR_REPO}"
+        if gcloud artifacts repositories describe "$REPO_PATH" >/dev/null 2>&1; then
+          echo "Artifact Registry repo ${_AR_REPO} already exists in ${_REGION}."
+        else
+          echo "Creating Artifact Registry repo ${_AR_REPO} in ${_REGION}."
+          gcloud artifacts repositories create "${_AR_REPO}" \
+            --project="${_PROJECT_ID}" \
+            --repository-format=docker \
+            --location="${_REGION}" \
+            --description="Auto-created by Cloud Build"
+        fi
+  - id: 'build-web'
+    waitFor: ['ensure-artifact-repo']
     name: 'gcr.io/cloud-builders/docker'
     env:
       - 'DOCKER_BUILDKIT=1'
