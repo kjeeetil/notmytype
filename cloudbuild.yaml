@@ -59,26 +59,26 @@ steps:
       - |
         set -euo pipefail
         KEEP=${_KEEP_RELEASES:-5}
-        if [[ "${KEEP}" -le 0 ]]; then
-          echo "KEEP_RELEASES is ${KEEP}; skipping prune."
+        if [[ "$KEEP" -le 0 ]]; then
+          echo "KEEP_RELEASES is $KEEP; skipping prune."
           exit 0
         fi
         IMAGE_PATH="${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/${_SERVICE_WEB}"
-        echo "Pruning ${IMAGE_PATH}, keeping ${KEEP} most recent images"
+        echo "Pruning $IMAGE_PATH, keeping $KEEP most recent images"
         TMP=$(mktemp)
-        gcloud artifacts docker images list "${IMAGE_PATH}" --sort-by="~UPDATE_TIME" --format="value(DIGEST)" > "${TMP}"
-        TOTAL=$(grep -c '.' "${TMP}" || true)
-        if [[ "${TOTAL}" -le "${KEEP}" ]]; then
-          echo "Only ${TOTAL} images found, nothing to prune."
-          rm -f "${TMP}"
+        gcloud artifacts docker images list "$IMAGE_PATH" --sort-by="~UPDATE_TIME" --format="value(DIGEST)" > "$TMP"
+        TOTAL=$(grep -c '.' "$TMP" || true)
+        if [[ "$TOTAL" -le "$KEEP" ]]; then
+          echo "Only $TOTAL images found, nothing to prune."
+          rm -f "$TMP"
           exit 0
         fi
-        tail -n "+$((KEEP+1))" "${TMP}" | while read -r digest; do
-          [[ -z "${digest}" ]] && continue
-          echo "Deleting ${IMAGE_PATH}@${digest}"
-          gcloud artifacts docker images delete "${IMAGE_PATH}@${digest}" --quiet --delete-tags || true
+        tail -n "+$((KEEP+1))" "$TMP" | while read -r digest; do
+          [[ -z "$digest" ]] && continue
+          echo "Deleting $IMAGE_PATH@$digest"
+          gcloud artifacts docker images delete "$IMAGE_PATH@$digest" --quiet --delete-tags || true
         done
-        rm -f "${TMP}"
+        rm -f "$TMP"
 
 images:
   - '${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/${_SERVICE_WEB}:${SHORT_SHA}'
