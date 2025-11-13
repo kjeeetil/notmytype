@@ -67,6 +67,7 @@ export default function Page() {
   const currentKeyStatsRef = useRef({});
   const [lastHeatmapStats, setLastHeatmapStats] = useState({});
   const [practiceMode, setPracticeMode] = useState(false);
+  const [keyboardLayout, setKeyboardLayout] = useState("us");
   const lastProgressTimeRef = useRef(null);
   const blockClipboardInteraction = useCallback((event) => {
     event.preventDefault();
@@ -441,6 +442,29 @@ export default function Page() {
           >
             {practiceMode ? "Practice On" : "Practice Off"}
           </button>
+          {practiceMode && (
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "#e2e8f0", background: "rgba(15,23,42,0.4)", borderRadius: 999, padding: "6px 12px", border: "1px solid rgba(255,255,255,0.2)" }}>
+              Layout
+              <select
+                value={keyboardLayout}
+                onChange={(e) => setKeyboardLayout(e.target.value)}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: "#f8fafc",
+                  fontWeight: 600,
+                  fontSize: 13,
+                  outline: "none"
+                }}
+              >
+                {Object.entries(KEY_LAYOUTS).map(([key, layout]) => (
+                  <option key={key} value={key} style={{ color: "#0f172a" }}>
+                    {layout.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <button
             onClick={handleToggleAudio}
             disabled={audioInitPending && !audioEnabled}
@@ -526,6 +550,7 @@ export default function Page() {
 
       {practiceMode && (
         <OnScreenKeyboard
+          layout={KEY_LAYOUTS[keyboardLayout] || KEY_LAYOUTS.us}
           nextChar={passage[cursor] || ""}
           stats={showHeatmap ? lastHeatmapStats : null}
         />
@@ -542,6 +567,7 @@ export default function Page() {
       </main>
       {practiceMode && showHeatmap && (
         <HeatmapOverlay
+          layout={KEY_LAYOUTS[keyboardLayout] || KEY_LAYOUTS.us}
           stats={lastHeatmapStats}
           onClose={() => {
             setShowHeatmap(false);
@@ -582,7 +608,7 @@ function normalizeKeyLabel(key) {
   return key.toLowerCase();
 }
 
-// Finger map for a compact US layout reference
+// Finger map for compact layout reference
 const FINGER_COLORS = {
   'pl': 'var(--finger-pinkie-left)',
   'rl': 'var(--finger-ring-left)',
@@ -595,70 +621,139 @@ const FINGER_COLORS = {
   'pr': 'var(--finger-pinkie-right)'
 };
 
-// Minimal keyboard layout with finger assignment
-const KEY_LAYOUT = [
-  [
-    { k: '`', f: 'pl' }, { k: '1', f: 'pl' }, { k: '2', f: 'rl' }, { k: '3', f: 'ml' }, { k: '4', f: 'il' }, { k: '5', f: 'il' }, { k: '6', f: 'ir' }, { k: '7', f: 'ir' }, { k: '8', f: 'mr' }, { k: '9', f: 'rr' }, { k: '0', f: 'pr' }, { k: '-', f: 'pr' }, { k: '=', f: 'pr' }
-  ],
-  [
-    { k: 'q', f: 'pl' }, { k: 'w', f: 'rl' }, { k: 'e', f: 'ml' }, { k: 'r', f: 'il' }, { k: 't', f: 'il' },
-    { k: 'y', f: 'ir' }, { k: 'u', f: 'ir' }, { k: 'i', f: 'mr' }, { k: 'o', f: 'rr' }, { k: 'p', f: 'pr' }, { k: '[', f: 'pr' }, { k: ']', f: 'pr' }
-  ],
-  [
-    { k: 'a', f: 'pl' }, { k: 's', f: 'rl' }, { k: 'd', f: 'ml' }, { k: 'f', f: 'il' }, { k: 'g', f: 'il' },
-    { k: 'h', f: 'ir' }, { k: 'j', f: 'ir' }, { k: 'k', f: 'mr' }, { k: 'l', f: 'rr' }, { k: ';', f: 'pr' }, { k: "'", f: 'pr' }
-  ],
-  [
-    { k: 'z', f: 'pl' }, { k: 'x', f: 'rl' }, { k: 'c', f: 'ml' }, { k: 'v', f: 'il' }, { k: 'b', f: 'il' },
-    { k: 'n', f: 'ir' }, { k: 'm', f: 'ir' }, { k: ',', f: 'mr' }, { k: '.', f: 'rr' }, { k: '/', f: 'pr' }
-  ],
-  [
-    { k: 'space', f: 'th', wide: true }
-  ]
-];
+// Keyboard layouts with rough physical offsets for alignment
+const KEY_LAYOUTS = {
+  us: {
+    label: 'ANSI US',
+    rows: [
+      {
+        offset: 0,
+        keys: [
+          { k: '`', f: 'pl' }, { k: '1', f: 'pl' }, { k: '2', f: 'rl' }, { k: '3', f: 'ml' }, { k: '4', f: 'il' },
+          { k: '5', f: 'il' }, { k: '6', f: 'ir' }, { k: '7', f: 'ir' }, { k: '8', f: 'mr' }, { k: '9', f: 'rr' },
+          { k: '0', f: 'pr' }, { k: '-', f: 'pr' }, { k: '=', f: 'pr' }
+        ]
+      },
+      {
+        offset: 18,
+        keys: [
+          { k: 'q', f: 'pl' }, { k: 'w', f: 'rl' }, { k: 'e', f: 'ml' }, { k: 'r', f: 'il' }, { k: 't', f: 'il' },
+          { k: 'y', f: 'ir' }, { k: 'u', f: 'ir' }, { k: 'i', f: 'mr' }, { k: 'o', f: 'rr' }, { k: 'p', f: 'pr' },
+          { k: '[', f: 'pr' }, { k: ']', f: 'pr' }
+        ]
+      },
+      {
+        offset: 30,
+        keys: [
+          { k: 'a', f: 'pl' }, { k: 's', f: 'rl' }, { k: 'd', f: 'ml' }, { k: 'f', f: 'il' }, { k: 'g', f: 'il' },
+          { k: 'h', f: 'ir' }, { k: 'j', f: 'ir' }, { k: 'k', f: 'mr' }, { k: 'l', f: 'rr' }, { k: ';', f: 'pr' },
+          { k: "'", f: 'pr' }
+        ]
+      },
+      {
+        offset: 50,
+        keys: [
+          { k: 'z', f: 'pl' }, { k: 'x', f: 'rl' }, { k: 'c', f: 'ml' }, { k: 'v', f: 'il' }, { k: 'b', f: 'il' },
+          { k: 'n', f: 'ir' }, { k: 'm', f: 'ir' }, { k: ',', f: 'mr' }, { k: '.', f: 'rr' }, { k: '/', f: 'pr' }
+        ]
+      },
+      {
+        offset: 140,
+        keys: [
+          { k: 'space', f: 'th', wide: true }
+        ]
+      }
+    ]
+  },
+  no: {
+    label: 'Norwegian',
+    rows: [
+      {
+        offset: 0,
+        keys: [
+          { k: '|', f: 'pl' }, { k: '1', f: 'pl' }, { k: '2', f: 'rl' }, { k: '3', f: 'ml' }, { k: '4', f: 'il' },
+          { k: '5', f: 'il' }, { k: '6', f: 'ir' }, { k: '7', f: 'ir' }, { k: '8', f: 'mr' }, { k: '9', f: 'rr' },
+          { k: '0', f: 'pr' }, { k: '+', f: 'pr' }, { k: '\\', f: 'pr' }
+        ]
+      },
+      {
+        offset: 18,
+        keys: [
+          { k: 'q', f: 'pl' }, { k: 'w', f: 'rl' }, { k: 'e', f: 'ml' }, { k: 'r', f: 'il' }, { k: 't', f: 'il' },
+          { k: 'y', f: 'ir' }, { k: 'u', f: 'ir' }, { k: 'i', f: 'mr' }, { k: 'o', f: 'rr' }, { k: 'p', f: 'pr' },
+          { k: 'å', f: 'pr' }
+        ]
+      },
+      {
+        offset: 30,
+        keys: [
+          { k: 'a', f: 'pl' }, { k: 's', f: 'rl' }, { k: 'd', f: 'ml' }, { k: 'f', f: 'il' }, { k: 'g', f: 'il' },
+          { k: 'h', f: 'ir' }, { k: 'j', f: 'ir' }, { k: 'k', f: 'mr' }, { k: 'l', f: 'rr' }, { k: 'ø', f: 'pr' },
+          { k: 'æ', f: 'pr' }
+        ]
+      },
+      {
+        offset: 50,
+        keys: [
+          { k: 'z', f: 'pl' }, { k: 'x', f: 'rl' }, { k: 'c', f: 'ml' }, { k: 'v', f: 'il' }, { k: 'b', f: 'il' },
+          { k: 'n', f: 'ir' }, { k: 'm', f: 'ir' }, { k: ',', f: 'mr' }, { k: '.', f: 'rr' }, { k: '-', f: 'pr' }
+        ]
+      },
+      {
+        offset: 140,
+        keys: [
+          { k: 'space', f: 'th', wide: true }
+        ]
+      }
+    ]
+  }
+};
 
-function OnScreenKeyboard({ nextChar, stats }) {
+function OnScreenKeyboard({ nextChar, stats, layout }) {
+  const currentLayout = layout || KEY_LAYOUTS.us;
   const nextLabel = normalizeKeyLabel(nextChar);
   return (
     <section style={{ marginTop: 14 }}>
       <div className="kbd-col">
-        {KEY_LAYOUT.map((row, idx) => (
-          <div className="kbd-row" key={idx}>
-            {row.map(({ k, f, wide }) => {
-              const color = FINGER_COLORS[f] || '#64748b';
-              const isNext = nextLabel === k;
-              const stat = stats ? stats[k] : null;
-              // Heat factor: errors / total -> 0..1, map to red tint
-              const heat = stat && stat.total > 0 ? Math.min(1, stat.errors / stat.total) : 0;
-              const heatBg = heat > 0 ? `rgba(248,113,113,${0.12 + 0.28 * heat})` : 'var(--key-bg)';
-              const style = {
-                background: heatBg,
-                borderColor: 'var(--key-border)',
-                color: '#e2e8f0',
-                minWidth: wide ? 180 : 28,
-              };
-              return (
-                <div key={k} className={`kbd ${isNext ? 'hl' : ''}`} style={style} title={stat ? `${k} • errors ${stat.errors}/${stat.total}` : k}>
-                  <span style={{ width: '100%', textAlign: 'center' }}>{k === 'space' ? '␣' : k}</span>
-                  <div style={{ width: 6, height: 6, borderRadius: 999, background: color, marginLeft: 6 }} />
-                </div>
-              );
-            })}
-          </div>
-        ))}
+        {currentLayout.rows.map((row, idx) => {
+          const marginLeft = row.offset != null ? (typeof row.offset === 'number' ? `${row.offset}px` : row.offset) : undefined;
+          return (
+            <div className="kbd-row" key={idx} style={{ marginLeft }}>
+              {row.keys.map(({ k, f, wide }) => {
+                const color = FINGER_COLORS[f] || '#64748b';
+                const isNext = nextLabel === k;
+                const stat = stats ? stats[k] : null;
+                const heat = stat && stat.total > 0 ? Math.min(1, stat.errors / stat.total) : 0;
+                const heatBg = heat > 0 ? `rgba(248,113,113,${0.12 + 0.28 * heat})` : 'var(--key-bg)';
+                const style = {
+                  background: heatBg,
+                  borderColor: 'var(--key-border)',
+                  color: '#e2e8f0',
+                  minWidth: wide ? 200 : 32,
+                };
+                return (
+                  <div key={`${idx}-${k}`} className={`kbd ${isNext ? 'hl' : ''}`} style={style} title={stat ? `${k} • errors ${stat.errors}/${stat.total}` : k}>
+                    <span style={{ width: '100%', textAlign: 'center' }}>{k === 'space' ? '␣' : k}</span>
+                    <div style={{ width: 6, height: 6, borderRadius: 999, background: color, marginLeft: 6 }} />
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
       </div>
       <div className="kbd-legend">Next key highlighted; dot color = finger.</div>
     </section>
   );
 }
 
-function HeatmapOverlay({ stats, onClose }) {
+function HeatmapOverlay({ stats, onClose, layout }) {
   return (
     <div className="heatmap-veil" role="dialog" aria-label="Per-key heatmap">
       <div className="heatmap-card">
         <h3 className="heatmap-title">Per‑key heatmap (last passage)</h3>
         <div className="heatmap-note">Redder keys had more errors; hover for details.</div>
-        <OnScreenKeyboard nextChar={''} stats={stats} />
+        <OnScreenKeyboard layout={layout} nextChar={''} stats={stats} />
         <div className="heatmap-actions">
           <button onClick={onClose} style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #64748b', background: 'transparent', color: '#e2e8f0' }}>Continue</button>
         </div>
