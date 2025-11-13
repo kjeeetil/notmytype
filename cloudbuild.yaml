@@ -85,3 +85,12 @@ images:
 
 options:
   logging: CLOUD_LOGGING_ONLY
+
+substitutions:
+  _PROJECT_ID: ${PROJECT_ID}
+  _REGION: us-central1
+  _AR_REPO: typing-race
+  _SERVICE_WEB: typing-race-web
+  _MIN_INSTANCES: '0'
+  _MAX_INSTANCES: '10'
+  _KEEP_RELEASES: '5'
