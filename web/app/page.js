@@ -1,13 +1,19 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CONTACT_NOTES, CONTACT_LOOP_DURATION } from "../lib/contact-melody";
-import { PASSAGES } from "../lib/passages";
 
 const WINDOW_FLOAT_MS = 10_000;
 const WINDOW_MINUTE_MS = 60_000;
 const WINDOW_RESPONSIVE_MS = 5_000;
 const MAX_HISTORY_MS = 5 * 60_000;
 const CHART_STEP_MS = 5_000;
+const FALLBACK_PASSAGES = [
+  "Pecan Energies advocates for Africa to harness its resources sustainably within a just energy transition for the continent.",
+  "Building on a USD 200 million investment, Africa Finance Corporation acquired Pecan Energies to develop Ghana's offshore resources responsibly.",
+  "Our ambition is to diversify over time and consolidate as a Pan-African energy leader focused on sustainable development and empowered communities.",
+  "The company blends Pan-African and Scandinavian values where sustainability, localisation, empowerment and giving back are a way of doing business.",
+  "Our operating model is integrated, flexible and efficient with a commitment to empower communities beyond local content obligations."
+];
 const CONTACT_MELODY_NOTES = Array.isArray(CONTACT_NOTES) ? CONTACT_NOTES : [];
 const CONTACT_MELODY_DURATION = typeof CONTACT_LOOP_DURATION === "number" && CONTACT_LOOP_DURATION > 0
   ? CONTACT_LOOP_DURATION
@@ -44,7 +50,7 @@ export default function Page() {
   const [isSubmittingScore, setIsSubmittingScore] = useState(false);
 
   const inputRef = useRef(null);
-  const passageTimerRef = useRef(null);
+  const fallbackTimerRef = useRef(null);
   const [passagesCompleted, setPassagesCompleted] = useState(0);
   const [showNamePrompt, setShowNamePrompt] = useState(false);
   const [pendingScore, setPendingScore] = useState(null);
@@ -63,9 +69,9 @@ export default function Page() {
     return false;
   }, []);
 
-  const startPassageRace = useCallback(() => {
-    const nextPassage = pickPassage();
-    setPassage(nextPassage);
+  const startFallbackRace = useCallback(() => {
+    const fallback = pickFallbackPassage();
+    setPassage(fallback);
     setLoadingPassage(false);
     setAwaitingNext(false);
     setStartedAt(Date.now());
@@ -76,8 +82,8 @@ export default function Page() {
     completionRef.current = false;
   }, []);
   useEffect(() => {
-    startPassageRace();
-  }, [startPassageRace]);
+    startFallbackRace();
+  }, [startFallbackRace]);
 
 
   useEffect(() => {
@@ -138,20 +144,20 @@ export default function Page() {
   }, [audioEnabled, audioInitPending]);
 
   useEffect(() => {
-    if (passageTimerRef.current) {
-      clearTimeout(passageTimerRef.current);
+    if (fallbackTimerRef.current) {
+      clearTimeout(fallbackTimerRef.current);
     }
     if (!loadingPassage || passage.length) return;
-    passageTimerRef.current = setTimeout(() => {
-      startPassageRace();
+    fallbackTimerRef.current = setTimeout(() => {
+      startFallbackRace();
     }, 4000);
     return () => {
-      if (passageTimerRef.current) {
-        clearTimeout(passageTimerRef.current);
-        passageTimerRef.current = null;
+      if (fallbackTimerRef.current) {
+        clearTimeout(fallbackTimerRef.current);
+        fallbackTimerRef.current = null;
       }
     };
-  }, [loadingPassage, passage.length, startPassageRace]);
+  }, [loadingPassage, passage.length, startFallbackRace]);
   const refreshScores = useCallback(async () => {
     try {
       const res = await fetch("/api/scores", { cache: "no-store" });
@@ -300,7 +306,7 @@ export default function Page() {
         setPassage("");
         return 0;
       }
-      startPassageRace();
+      startFallbackRace();
       return completed;
     });
   }
@@ -313,8 +319,8 @@ export default function Page() {
     setPassagesCompleted(0);
     completionRef.current = false;
     setAntiCheatWarning("");
-    startPassageRace();
-  }, [startPassageRace]);
+    startFallbackRace();
+  }, [startFallbackRace]);
 
   const submitScore = useCallback(async (name) => {
     if (pendingScore === null || isSubmittingScore) return;
@@ -527,9 +533,9 @@ function StatsPanel({ floating, peak, bestMinute, series }) {
   );
 }
 
-function pickPassage() {
-  const idx = Math.floor(Math.random() * PASSAGES.length);
-  return PASSAGES[idx] || "Pecan Energies unlocks sustainable prosperity for Ghana and beyond.";
+function pickFallbackPassage() {
+  const idx = Math.floor(Math.random() * FALLBACK_PASSAGES.length);
+  return FALLBACK_PASSAGES[idx] || "Pecan Energies unlocks sustainable prosperity for Ghana and beyond.";
 }
 
 function Stat({ label, value }) {
