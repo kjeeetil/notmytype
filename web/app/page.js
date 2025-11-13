@@ -62,6 +62,11 @@ export default function Page() {
   const mountedRef = useRef(true);
   const [sessionStats, setSessionStats] = useState({ chars: 0, startMs: null });
   const [antiCheatWarning, setAntiCheatWarning] = useState("");
+  const [shakeFlag, setShakeFlag] = useState(false);
+  const [showHeatmap, setShowHeatmap] = useState(false);
+  const currentKeyStatsRef = useRef({});
+  const [lastHeatmapStats, setLastHeatmapStats] = useState({});
+  const [practiceMode, setPracticeMode] = useState(false);
   const lastProgressTimeRef = useRef(null);
   const blockClipboardInteraction = useCallback((event) => {
     event.preventDefault();
@@ -80,10 +85,30 @@ export default function Page() {
     setEvents((prev) => [...prev]);
     setAntiCheatWarning("");
     completionRef.current = false;
+    currentKeyStatsRef.current = {};
   }, []);
   useEffect(() => {
     startFallbackRace();
   }, [startFallbackRace]);
+
+  useEffect(() => {
+    setPassagesCompleted(0);
+    currentKeyStatsRef.current = {};
+    setLastHeatmapStats({});
+    if (practiceMode) {
+      setShowNamePrompt(false);
+      setPendingScore(null);
+      setScoreSubmitError(null);
+    }
+  }, [practiceMode]);
+
+  useEffect(() => {
+    if (!practiceMode && showHeatmap) {
+      setShowHeatmap(false);
+      currentKeyStatsRef.current = {};
+      startFallbackRace();
+    }
+  }, [practiceMode, showHeatmap, startFallbackRace]);
 
 
   useEffect(() => {
@@ -209,14 +234,16 @@ export default function Page() {
     }
   }, [effectiveMetrics.responsiveCpm]);
   const decoratedPassage = useMemo(() => {
+    const previewRange = practiceMode ? 2 : 0;
     return passage.split("").map((ch, idx) => {
       const typedChar = typed[idx];
       const isCorrect = idx < cursor;
       const isError = Boolean(typedChar && typedChar !== ch && idx >= cursor);
       const isCurrent = !isError && idx === cursor;
-      return { ch, isCorrect, isError, isCurrent };
+      const isNext = practiceMode && !isError && idx > cursor && idx <= cursor + previewRange;
+      return { ch, isCorrect, isError, isCurrent, isNext };
     });
-  }, [passage, typed, cursor]);
+  }, [passage, typed, cursor, practiceMode]);
 
   useEffect(() => {
     setPeakCpm((prev) => Math.max(prev, metrics.floatingCpm));
@@ -287,14 +314,40 @@ export default function Page() {
     }
   }
 
+  // Track keystrokes for shake + per-key stats
+  const onKeyDown = useCallback((e) => {
+    if (!practiceMode) return;
+    if (!passage || awaitingNext || showNamePrompt) return;
+    const key = e.key;
+    const expected = passage[cursor] || "";
+    const norm = (s) => (s || "").toLowerCase();
+    const simpleChar = key.length === 1;
+    // Record per-key stats for visible heatmap (letters normalized)
+    if (simpleChar) {
+      const label = normalizeKeyLabel(key);
+      const stat = currentKeyStatsRef.current[label] || { total: 0, errors: 0 };
+      stat.total += 1;
+      if (norm(key) !== norm(expected)) stat.errors += 1;
+      currentKeyStatsRef.current[label] = stat;
+    }
+    // Trigger error shake on incorrect next key
+    if (simpleChar && norm(key) !== norm(expected)) {
+      setShakeFlag(true);
+      setTimeout(() => setShakeFlag(false), 170);
+    }
+  }, [practiceMode, passage, cursor, awaitingNext, showNamePrompt]);
+
   function handleCompletion() {
     completionRef.current = true;
+    if (practiceMode) {
+      setLastHeatmapStats(currentKeyStatsRef.current);
+    }
     setTyped("");
     setCursor(0);
     setStartedAt(null);
     setPassagesCompleted((prev) => {
       const completed = prev + 1;
-      if (completed >= 3) {
+      if (!practiceMode && completed >= 3) {
         const { chars, startMs } = sessionStats;
         const durationMs = startMs ? Math.max(1, Date.now() - startMs) : 1;
         const avgCpm = durationMs > 0 ? (chars / durationMs) * 60000 : 0;
@@ -306,7 +359,13 @@ export default function Page() {
         setPassage("");
         return 0;
       }
-      startFallbackRace();
+      if (practiceMode) {
+        setShowHeatmap(true);
+        setAwaitingNext(true);
+        setLoadingPassage(true);
+      } else {
+        startFallbackRace();
+      }
       return completed;
     });
   }
@@ -323,6 +382,7 @@ export default function Page() {
   }, [startFallbackRace]);
 
   const submitScore = useCallback(async (name) => {
+    if (practiceMode) return;
     if (pendingScore === null || isSubmittingScore) return;
     const payload = {
       name: name || "Anonymous",
@@ -355,7 +415,7 @@ export default function Page() {
     } finally {
       setIsSubmittingScore(false);
     }
-  }, [pendingScore, isSubmittingScore, resetAfterScore, refreshScores]);
+  }, [practiceMode, pendingScore, isSubmittingScore, resetAfterScore, refreshScores]);
 
   return (
     <div style={{ position: "relative", minHeight: "100vh", overflow: "hidden", background: "#000" }}>
@@ -363,23 +423,44 @@ export default function Page() {
       <main style={{ position: "relative", zIndex: 1, maxWidth: 720, margin: "40px auto", padding: 16, color: "#f8fafc" }}>
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, marginBottom: 12 }}>
         <h1 style={{ fontSize: 28, fontWeight: 600, margin: 0 }}>Pecan Brand Alignment Test</h1>
-        <button
-          onClick={handleToggleAudio}
-          disabled={audioInitPending && !audioEnabled}
-          style={{
-            marginLeft: "auto",
-            padding: "8px 16px",
-            borderRadius: 999,
-            border: "1px solid rgba(255,255,255,0.3)",
-            background: audioEnabled ? "rgba(34,197,94,0.2)" : "transparent",
-            color: "#f8fafc",
-            fontWeight: 600,
-            cursor: audioInitPending && !audioEnabled ? "wait" : "pointer",
-            opacity: audioInitPending && !audioEnabled ? 0.65 : 1
-          }}
-        >
-          {audioEnabled ? "Music Off" : audioInitPending ? "Starting…" : "Music On"}
-        </button>
+        <div style={{ marginLeft: "auto", display: "flex", flexWrap: "wrap", gap: 8 }}>
+          <button
+            type="button"
+            onClick={() => setPracticeMode((prev) => !prev)}
+            aria-pressed={practiceMode}
+            title="Practice mode enables training cues and disables leaderboard submissions."
+            style={{
+              padding: "8px 16px",
+              borderRadius: 999,
+              border: "1px solid rgba(255,255,255,0.3)",
+              background: practiceMode ? "rgba(59,130,246,0.25)" : "transparent",
+              color: "#f8fafc",
+              fontWeight: 600,
+              cursor: "pointer"
+            }}
+          >
+            {practiceMode ? "Practice On" : "Practice Off"}
+          </button>
+          <button
+            onClick={handleToggleAudio}
+            disabled={audioInitPending && !audioEnabled}
+            style={{
+              padding: "8px 16px",
+              borderRadius: 999,
+              border: "1px solid rgba(255,255,255,0.3)",
+              background: audioEnabled ? "rgba(34,197,94,0.2)" : "transparent",
+              color: "#f8fafc",
+              fontWeight: 600,
+              cursor: audioInitPending && !audioEnabled ? "wait" : "pointer",
+              opacity: audioInitPending && !audioEnabled ? 0.65 : 1
+            }}
+          >
+            {audioEnabled ? "Music Off" : audioInitPending ? "Starting…" : "Music On"}
+          </button>
+        </div>
+      </div>
+      <div style={{ fontSize: 13, color: "#94a3b8", marginBottom: 12 }}>
+        Practice mode enables training cues and disables leaderboard submissions.
       </div>
       <div style={{ border: "1px solid rgba(255,255,255,0.2)", borderRadius: 12, padding: 16, background: "rgba(0,0,0,0.5)" }}>
         <p style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 18, lineHeight: 1.6, minHeight: 48 }}>
@@ -392,12 +473,13 @@ export default function Page() {
                 style={{
                   fontWeight: token.isCorrect ? 700 : 400,
                   color: token.isError ? "#f87171" : token.isCorrect ? "#14b8a6" : "#e2e8f0",
-                  backgroundColor: token.isError ? "rgba(220,38,38,0.15)" : "transparent",
-                  textDecoration: token.isCurrent ? "underline" : "none",
+                  backgroundColor: token.isError ? "rgba(220,38,38,0.15)" : token.isNext ? "rgba(59,130,246,0.14)" : "transparent",
+                  textDecoration: token.isCurrent ? "underline" : token.isNext ? "none" : "none",
                   textDecorationThickness: token.isCurrent ? "3px" : undefined,
                   textDecorationColor: token.isCurrent ? "#0f172a" : undefined,
                   transition: "color 120ms ease, font-weight 120ms ease, background-color 120ms ease"
                 }}
+                className={practiceMode && token.isCurrent && shakeFlag ? "shake" : undefined}
               >
                 {token.ch}
               </span>
@@ -407,6 +489,7 @@ export default function Page() {
         <input
           ref={inputRef}
           onChange={onChange}
+          onKeyDown={onKeyDown}
           onPaste={blockClipboardInteraction}
           onCopy={blockClipboardInteraction}
           onCut={blockClipboardInteraction}
@@ -433,13 +516,20 @@ export default function Page() {
           color: "#f8fafc",
           boxSizing: "border-box"
           }}
-        />
+          />
         {antiCheatWarning && (
           <div style={{ marginTop: 8, fontSize: 14, color: "#f87171" }} role="status">
             {antiCheatWarning}
           </div>
         )}
       </div>
+
+      {practiceMode && (
+        <OnScreenKeyboard
+          nextChar={passage[cursor] || ""}
+          stats={showHeatmap ? lastHeatmapStats : null}
+        />
+      )}
 
       <StatsPanel
         floating={effectiveMetrics.floatingCpm}
@@ -450,7 +540,18 @@ export default function Page() {
       <Scoreboard scores={scores} error={scoreError} />
 
       </main>
-      {showNamePrompt && (
+      {practiceMode && showHeatmap && (
+        <HeatmapOverlay
+          stats={lastHeatmapStats}
+          onClose={() => {
+            setShowHeatmap(false);
+            currentKeyStatsRef.current = {};
+            // Continue to next passage after overlay dismissed
+            startFallbackRace();
+          }}
+        />
+      )}
+      {!practiceMode && showNamePrompt && (
         <NamePrompt
           inputRef={scoreInputRef}
           pendingScore={pendingScore}
@@ -467,6 +568,101 @@ export default function Page() {
           error={scoreSubmitError}
         />
       )}
+    </div>
+  );
+}
+
+// Normalize printable key labels to a canonical label used by keyboard/heatmap
+function normalizeKeyLabel(key) {
+  if (!key) return '';
+  const map = { ' ': 'space', 'Enter': 'enter', 'Backspace': 'backspace', 'Tab': 'tab' };
+  if (map[key]) return map[key];
+  // Use single character lowercase for letters/symbols
+  if (key.length === 1) return key.toLowerCase();
+  return key.toLowerCase();
+}
+
+// Finger map for a compact US layout reference
+const FINGER_COLORS = {
+  'pl': 'var(--finger-pinkie-left)',
+  'rl': 'var(--finger-ring-left)',
+  'ml': 'var(--finger-middle-left)',
+  'il': 'var(--finger-index-left)',
+  'th': 'var(--finger-thumb)',
+  'ir': 'var(--finger-index-right)',
+  'mr': 'var(--finger-middle-right)',
+  'rr': 'var(--finger-ring-right)',
+  'pr': 'var(--finger-pinkie-right)'
+};
+
+// Minimal keyboard layout with finger assignment
+const KEY_LAYOUT = [
+  [
+    { k: '`', f: 'pl' }, { k: '1', f: 'pl' }, { k: '2', f: 'rl' }, { k: '3', f: 'ml' }, { k: '4', f: 'il' }, { k: '5', f: 'il' }, { k: '6', f: 'ir' }, { k: '7', f: 'ir' }, { k: '8', f: 'mr' }, { k: '9', f: 'rr' }, { k: '0', f: 'pr' }, { k: '-', f: 'pr' }, { k: '=', f: 'pr' }
+  ],
+  [
+    { k: 'q', f: 'pl' }, { k: 'w', f: 'rl' }, { k: 'e', f: 'ml' }, { k: 'r', f: 'il' }, { k: 't', f: 'il' },
+    { k: 'y', f: 'ir' }, { k: 'u', f: 'ir' }, { k: 'i', f: 'mr' }, { k: 'o', f: 'rr' }, { k: 'p', f: 'pr' }, { k: '[', f: 'pr' }, { k: ']', f: 'pr' }
+  ],
+  [
+    { k: 'a', f: 'pl' }, { k: 's', f: 'rl' }, { k: 'd', f: 'ml' }, { k: 'f', f: 'il' }, { k: 'g', f: 'il' },
+    { k: 'h', f: 'ir' }, { k: 'j', f: 'ir' }, { k: 'k', f: 'mr' }, { k: 'l', f: 'rr' }, { k: ';', f: 'pr' }, { k: "'", f: 'pr' }
+  ],
+  [
+    { k: 'z', f: 'pl' }, { k: 'x', f: 'rl' }, { k: 'c', f: 'ml' }, { k: 'v', f: 'il' }, { k: 'b', f: 'il' },
+    { k: 'n', f: 'ir' }, { k: 'm', f: 'ir' }, { k: ',', f: 'mr' }, { k: '.', f: 'rr' }, { k: '/', f: 'pr' }
+  ],
+  [
+    { k: 'space', f: 'th', wide: true }
+  ]
+];
+
+function OnScreenKeyboard({ nextChar, stats }) {
+  const nextLabel = normalizeKeyLabel(nextChar);
+  return (
+    <section style={{ marginTop: 14 }}>
+      <div className="kbd-col">
+        {KEY_LAYOUT.map((row, idx) => (
+          <div className="kbd-row" key={idx}>
+            {row.map(({ k, f, wide }) => {
+              const color = FINGER_COLORS[f] || '#64748b';
+              const isNext = nextLabel === k;
+              const stat = stats ? stats[k] : null;
+              // Heat factor: errors / total -> 0..1, map to red tint
+              const heat = stat && stat.total > 0 ? Math.min(1, stat.errors / stat.total) : 0;
+              const heatBg = heat > 0 ? `rgba(248,113,113,${0.12 + 0.28 * heat})` : 'var(--key-bg)';
+              const style = {
+                background: heatBg,
+                borderColor: 'var(--key-border)',
+                color: '#e2e8f0',
+                minWidth: wide ? 180 : 28,
+              };
+              return (
+                <div key={k} className={`kbd ${isNext ? 'hl' : ''}`} style={style} title={stat ? `${k} • errors ${stat.errors}/${stat.total}` : k}>
+                  <span style={{ width: '100%', textAlign: 'center' }}>{k === 'space' ? '␣' : k}</span>
+                  <div style={{ width: 6, height: 6, borderRadius: 999, background: color, marginLeft: 6 }} />
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+      <div className="kbd-legend">Next key highlighted; dot color = finger.</div>
+    </section>
+  );
+}
+
+function HeatmapOverlay({ stats, onClose }) {
+  return (
+    <div className="heatmap-veil" role="dialog" aria-label="Per-key heatmap">
+      <div className="heatmap-card">
+        <h3 className="heatmap-title">Per‑key heatmap (last passage)</h3>
+        <div className="heatmap-note">Redder keys had more errors; hover for details.</div>
+        <OnScreenKeyboard nextChar={''} stats={stats} />
+        <div className="heatmap-actions">
+          <button onClick={onClose} style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #64748b', background: 'transparent', color: '#e2e8f0' }}>Continue</button>
+        </div>
+      </div>
     </div>
   );
 }
