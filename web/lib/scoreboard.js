@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 
 const MAX_RECENT_SCORES = 10;
-const SCORE_FILE_PATH = path.resolve(process.cwd(), "data", "scores.json");
+const SCORE_FILE_PATH = path.resolve(process.cwd(), "lib", "scores.json");
 
 function sanitizeScoreEntry(payload = {}) {
   const numericScore = Number(payload.score);
