@@ -1,115 +1,35 @@
-# Cloud Build pipeline: build & deploy the Next.js app to Cloud Run
-# Required substitutions in the trigger:
-#   _PROJECT_ID   (your GCP project id)
-#   _REGION       (e.g., europe-north1)
-#   _AR_REPO      (Artifact Registry repo name, e.g., typing-race)
-#   _SERVICE_WEB  (Cloud Run service name, e.g., typing-race-web)
-# Optional:
-#   _MIN_INSTANCES (default 0)
-#   _MAX_INSTANCES (default 10)
-#   _KEEP_RELEASES (default 5)
-
+# Minimal Cloud Build pipeline: build image and deploy to Cloud Run
 steps:
-  - id: 'ensure-artifact-repo'
-    waitFor: ['-']
-    name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    entrypoint: bash
+  - id: build
+    name: gcr.io/cloud-builders/docker
     args:
-      - '-c'
-      - |
-        set -euo pipefail
-        REPO_PATH="projects/${_PROJECT_ID}/locations/${_REGION}/repositories/${_AR_REPO}"
-        if gcloud artifacts repositories describe "$REPO_PATH" >/dev/null 2>&1; then
-          echo "Artifact Registry repo ${_AR_REPO} already exists in ${_REGION}."
-        else
-          echo "Creating Artifact Registry repo ${_AR_REPO} in ${_REGION}."
-          gcloud artifacts repositories create "${_AR_REPO}" \
-            --project="${_PROJECT_ID}" \
-            --repository-format=docker \
-            --location="${_REGION}" \
-            --description="Auto-created by Cloud Build"
-        fi
-  - id: 'build-web'
-    waitFor: ['ensure-artifact-repo']
-    name: 'gcr.io/cloud-builders/docker'
-    env:
-      - 'DOCKER_BUILDKIT=1'
+      - build
+      - -t
+      - gcr.io/$PROJECT_ID/${_SERVICE_WEB}:${SHORT_SHA}
+      - web
+
+  - id: push
+    waitFor: [build]
+    name: gcr.io/cloud-builders/docker
     args:
-      - 'build'
-      - '-t'
-      - '${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/${_SERVICE_WEB}:${SHORT_SHA}'
-      - '-t'
-      - '${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/${_SERVICE_WEB}:cache'
-      - '--build-arg'
-      - 'BUILDKIT_INLINE_CACHE=1'
-      - '--cache-from'
-      - '${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/${_SERVICE_WEB}:cache'
-      - 'web'
+      - push
+      - gcr.io/$PROJECT_ID/${_SERVICE_WEB}:${SHORT_SHA}
 
-  - id: 'push-web'
-    waitFor: ['build-web']
-    name: 'gcr.io/cloud-builders/docker'
-    args: ['push','${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/${_SERVICE_WEB}:${SHORT_SHA}']
-
-  - id: 'push-web-cache'
-    waitFor: ['build-web']
-    name: 'gcr.io/cloud-builders/docker'
-    args: ['push','${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/${_SERVICE_WEB}:cache']
-
-  - id: 'deploy-web'
-    waitFor: ['push-web']
-    name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    entrypoint: bash
+  - id: deploy
+    waitFor: [push]
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
     args:
-      - '-c'
-      - |
-        gcloud run deploy ${_SERVICE_WEB} \
-          --image=${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/${_SERVICE_WEB}:${SHORT_SHA} \
-          --region=${_REGION} \
-          --platform=managed \
-          --allow-unauthenticated \
-          --min-instances=${_MIN_INSTANCES:-0} \
-          --max-instances=${_MAX_INSTANCES:-10}
-
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    entrypoint: bash
-    args:
-      - '-c'
-      - |
-        set -euo pipefail
-        keep_count=${_KEEP_RELEASES:-5}
-        if [[ "$keep_count" -le 0 ]]; then
-          echo "KEEP_RELEASES is $keep_count; skipping prune."
-          exit 0
-        fi
-        image_path="${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/${_SERVICE_WEB}"
-        echo "Pruning $image_path, keeping $keep_count most recent images"
-        tmp_file=$(mktemp)
-        gcloud artifacts docker images list "$image_path" --sort-by="~UPDATE_TIME" --format="value(DIGEST)" > "$tmp_file"
-        total_images=$(grep -c '.' "$tmp_file" || true)
-        if [[ "$total_images" -le "$keep_count" ]]; then
-          echo "Only $total_images images found, nothing to prune."
-          rm -f "$tmp_file"
-          exit 0
-        fi
-        tail -n "+$((keep_count+1))" "$tmp_file" | while read -r digest; do
-          [[ -z "$digest" ]] && continue
-          echo "Deleting $image_path@$digest"
-          gcloud artifacts docker images delete "$image_path@$digest" --quiet --delete-tags || true
-        done
-        rm -f "$tmp_file"
+      - run
+      - deploy
+      - ${_SERVICE_WEB}
+      - --image=gcr.io/$PROJECT_ID/${_SERVICE_WEB}:${SHORT_SHA}
+      - --region=${_REGION}
+      - --platform=managed
+      - --allow-unauthenticated
 
 images:
-  - '${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/${_SERVICE_WEB}:${SHORT_SHA}'
-
-options:
-  logging: CLOUD_LOGGING_ONLY
+  - gcr.io/$PROJECT_ID/${_SERVICE_WEB}:${SHORT_SHA}
 
 substitutions:
-  _PROJECT_ID: ${PROJECT_ID}
-  _REGION: us-central1
-  _AR_REPO: notmytype
   _SERVICE_WEB: notmytype
-  _MIN_INSTANCES: '0'
-  _MAX_INSTANCES: '10'
-  _KEEP_RELEASES: '5'
+  _REGION: us-central1
