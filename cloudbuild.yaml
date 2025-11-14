@@ -42,4 +42,4 @@ options:
 
 substitutions:
   _SERVICE_WEB: notmytype
-  _REGION: us-central1
+  _REGION: europe-west1
