@@ -747,7 +747,7 @@ const KEY_LAYOUTS = {
         ]
       },
       {
-        offset: 46,
+        offset: 30,
         keys: [
           { k: '<', f: 'pl' }, { k: 'z', f: 'pl' }, { k: 'x', f: 'rl' }, { k: 'c', f: 'ml' }, { k: 'v', f: 'il' }, { k: 'b', f: 'il' },
           { k: 'n', f: 'ir' }, { k: 'm', f: 'ir' }, { k: ',', f: 'mr' }, { k: '.', f: 'rr' }, { k: '-', f: 'pr' }
