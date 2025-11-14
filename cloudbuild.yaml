@@ -36,6 +36,10 @@ steps:
 images:
   - gcr.io/$PROJECT_ID/${_SERVICE_WEB}:${SHORT_SHA}
 
+options:
+  logging: CLOUD_LOGGING_ONLY
+  default_logs_bucket_behavior: REGIONAL_USER_OWNED_BUCKET
+
 substitutions:
   _SERVICE_WEB: notmytype
   _REGION: us-central1
