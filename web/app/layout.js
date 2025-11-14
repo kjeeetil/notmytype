@@ -75,3 +75,9 @@ function RuntimeEnvScript() {
     />
   );
 }
+.toggle-control{display:flex;align-items:center;gap:8px;font-size:13px;color:#e2e8f0;font-weight:600}
+.toggle{position:relative;width:46px;height:24px;border-radius:999px;border:1px solid rgba(148,163,184,0.3);background:rgba(51,65,85,0.4);cursor:pointer;transition:background 160ms ease,border 160ms ease}
+.toggle-thumb{position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(15,23,42,0.35);transition:transform 160ms ease}
+.toggle.on{background:linear-gradient(135deg,#22c55e,#16a34a);border-color:rgba(34,197,94,0.8)}
+.toggle.on .toggle-thumb{transform:translateX(22px)}
+.toggle-control small{color:#94a3b8;font-weight:400}

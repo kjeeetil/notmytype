@@ -445,26 +445,24 @@ export default function Page() {
       <main style={{ position: "relative", zIndex: 1, maxWidth: 720, margin: "40px auto", padding: 16, color: "#f8fafc" }}>
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, marginBottom: 12 }}>
         <h1 style={{ fontSize: 28, fontWeight: 600, margin: 0 }}>Pecan Brand Alignment Test</h1>
-        <div style={{ marginLeft: "auto", display: "flex", flexWrap: "wrap", gap: 8 }}>
-          <button
-            type="button"
-            onClick={() => setPracticeMode((prev) => !prev)}
-            aria-pressed={practiceMode}
-            title="Practice mode enables training cues and disables leaderboard submissions."
-            style={{
-              padding: "8px 16px",
-              borderRadius: 999,
-              border: "1px solid rgba(255,255,255,0.3)",
-              background: practiceMode ? "rgba(59,130,246,0.25)" : "transparent",
-              color: "#f8fafc",
-              fontWeight: 600,
-              cursor: "pointer"
-            }}
-          >
-            {practiceMode ? "Practice Off" : "Practice On"}
-          </button>
+        <div style={{ marginLeft: "auto", display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center", justifyContent: "flex-end" }}>
+            <ToggleSwitch
+              label="Practice mode"
+              note="training cues"
+              active={practiceMode}
+              onToggle={() => setPracticeMode((prev) => !prev)}
+            />
+            <ToggleSwitch
+              label="Music"
+              note={audioInitPending && !audioEnabled ? "starting…" : "lofi beat"}
+              active={audioEnabled}
+              disabled={audioInitPending && !audioEnabled}
+              onToggle={handleToggleAudio}
+            />
+          </div>
           {practiceMode && (
-            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "#e2e8f0", background: "rgba(15,23,42,0.4)", borderRadius: 999, padding: "6px 12px", border: "1px solid rgba(255,255,255,0.2)" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "#e2e8f0", background: "rgba(15,23,42,0.4)", borderRadius: 999, padding: "6px 12px", border: "1px solid rgba(255,255,255,0.2)", justifyContent: "flex-end" }}>
               Layout
               <select
                 value={keyboardLayout}
@@ -486,22 +484,6 @@ export default function Page() {
               </select>
             </label>
           )}
-          <button
-            onClick={handleToggleAudio}
-            disabled={audioInitPending && !audioEnabled}
-            style={{
-              padding: "8px 16px",
-              borderRadius: 999,
-              border: "1px solid rgba(255,255,255,0.3)",
-              background: audioEnabled ? "rgba(34,197,94,0.2)" : "transparent",
-              color: "#f8fafc",
-              fontWeight: 600,
-              cursor: audioInitPending && !audioEnabled ? "wait" : "pointer",
-              opacity: audioInitPending && !audioEnabled ? 0.65 : 1
-            }}
-          >
-            {audioEnabled ? "Music Off" : audioInitPending ? "Starting…" : "Music On"}
-          </button>
         </div>
       </div>
       <div style={{ fontSize: 13, color: "#94a3b8", marginBottom: 12 }}>
@@ -654,6 +636,29 @@ function ComboMeter({ value, level }) {
       </div>
       <div className="combo-caption">Accurate keystrokes build the combo; errors drain it.</div>
     </section>
+  );
+}
+
+function ToggleSwitch({ label, note, active, onToggle, disabled }) {
+  const handleClick = () => {
+    if (disabled) return;
+    onToggle?.();
+  };
+  return (
+    <div className="toggle-control">
+      <span>{label}</span>
+      <button
+        type="button"
+        onClick={handleClick}
+        disabled={disabled}
+        aria-pressed={active}
+        className={`toggle${active ? ' on' : ''}`}
+        style={{ opacity: disabled ? 0.6 : 1 }}
+      >
+        <span className="toggle-thumb" />
+      </button>
+      {note && <small>{note}</small>}
+    </div>
   );
 }
 
