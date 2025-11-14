@@ -51,6 +51,12 @@ export default function RootLayout({ children }) {
 .caret-glow-1{text-shadow:0 0 6px rgba(56,189,248,0.95),0 0 12px rgba(14,165,233,0.7)}
 .caret-glow-2{text-shadow:0 0 6px rgba(56,189,248,0.95),0 0 16px rgba(14,165,233,0.75),0 0 24px rgba(244,114,182,0.6)}
 .caret-glow-3{text-shadow:0 0 10px rgba(249,115,22,0.95),0 0 20px rgba(234,179,8,0.8),0 0 32px rgba(59,130,246,0.6)}
+.toggle-control{display:flex;align-items:center;gap:8px;font-size:13px;color:#e2e8f0;font-weight:600}
+.toggle{position:relative;width:46px;height:24px;border-radius:999px;border:1px solid rgba(148,163,184,0.3);background:rgba(51,65,85,0.4);cursor:pointer;transition:background 160ms ease,border 160ms ease}
+.toggle-thumb{position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(15,23,42,0.35);transition:transform 160ms ease}
+.toggle.on{background:linear-gradient(135deg,#22c55e,#16a34a);border-color:rgba(34,197,94,0.8)}
+.toggle.on .toggle-thumb{transform:translateX(22px)}
+.toggle-control small{color:#94a3b8;font-weight:400}
 `
           }}
         />
@@ -75,9 +81,3 @@ function RuntimeEnvScript() {
     />
   );
 }
-.toggle-control{display:flex;align-items:center;gap:8px;font-size:13px;color:#e2e8f0;font-weight:600}
-.toggle{position:relative;width:46px;height:24px;border-radius:999px;border:1px solid rgba(148,163,184,0.3);background:rgba(51,65,85,0.4);cursor:pointer;transition:background 160ms ease,border 160ms ease}
-.toggle-thumb{position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(15,23,42,0.35);transition:transform 160ms ease}
-.toggle.on{background:linear-gradient(135deg,#22c55e,#16a34a);border-color:rgba(34,197,94,0.8)}
-.toggle.on .toggle-thumb{transform:translateX(22px)}
-.toggle-control small{color:#94a3b8;font-weight:400}
