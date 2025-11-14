@@ -461,7 +461,7 @@ export default function Page() {
               cursor: "pointer"
             }}
           >
-            {practiceMode ? "Practice On" : "Practice Off"}
+            {practiceMode ? "Practice Off" : "Practice On"}
           </button>
           {practiceMode && (
             <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "#e2e8f0", background: "rgba(15,23,42,0.4)", borderRadius: 999, padding: "6px 12px", border: "1px solid rgba(255,255,255,0.2)" }}>
